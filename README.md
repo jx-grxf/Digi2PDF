@@ -6,6 +6,7 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 
 ![Python](https://img.shields.io/badge/python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Selenium](https://img.shields.io/badge/selenium-browser_automation-43B02A?style=for-the-badge&logo=selenium&logoColor=white)
+![CI](https://img.shields.io/github/actions/workflow/status/jx-grxf/Digi2PDF/ci.yml?branch=main&style=for-the-badge&label=ci)
 ![License](https://img.shields.io/badge/license-MIT-black?style=for-the-badge)
 
 </div>
@@ -13,10 +14,10 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 ## Showcase
 
 ```text
-╭──────────────────────────────╮
-│ Digi2PDF                     │
+╭────────────────────────────────────────╮
+│ Digi2PDF                               │
 │ owned Digi4School ebooks -> clean PDFs │
-╰──────────────────────────────╯
+╰────────────────────────────────────────╯
 ● Opening Digi4School overview
 ● Capturing Mathematik 1
 ● Captured page 42
@@ -42,6 +43,9 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 | --- | --- |
 | Polished TUI | Rich and Questionary flow with strong contrast, status states, and arrow-key selections. |
 | Cross-platform | Designed for macOS and Windows with Chrome + Selenium. |
+| Secure login storage | Can store Digi4School credentials in the OS keychain or Windows Credential Manager. |
+| Export location picker | Lets you choose the output folder interactively or via `--output-dir`. |
+| Optional OCR | Can run an OCR post-process for searchable PDFs when `ocrmypdf` and Tesseract are available. |
 | PDF pipeline | Captures pages, crops the book canvas, removes duplicate final page, and writes a PDF. |
 | Provider handling | Supports Digi4School-style readers plus Scook and BiBox preparation paths. |
 | Clean architecture | Browser automation, TUI, image handling, and runtime options are split into maintainable modules. |
@@ -73,11 +77,34 @@ Use it only for books you are allowed to access and export under your account, s
 
 ## Requirements
 
-- Python 3.12+
 - Google Chrome
-- `uv` for local development
+- Python 3.12+ when installing as a Python CLI
+- `uv` for the recommended CLI installation and local development
+- Optional OCR: Tesseract plus `ocrmypdf` support on your platform
 
 ## Quick Start
+
+Recommended CLI install:
+
+```sh
+uv tool install git+https://github.com/jx-grxf/Digi2PDF.git
+digi2pdf
+```
+
+Windows users can either use the same CLI install or download `digi2pdf.exe` from the latest release assets:
+
+```powershell
+uv tool install git+https://github.com/jx-grxf/Digi2PDF.git
+digi2pdf
+```
+
+Run the downloaded EXE from PowerShell:
+
+```powershell
+.\digi2pdf.exe
+```
+
+Local development:
 
 ```sh
 uv sync --dev
@@ -90,7 +117,20 @@ uv run digi2pdf
 uv run digi2pdf --output-dir ./exports
 uv run digi2pdf --show-browser --delay 1.0
 uv run digi2pdf --all --keep-images
+uv run digi2pdf --ocr
+uv run digi2pdf --forget-login
 ```
+
+After global installation, drop `uv run`:
+
+```sh
+digi2pdf --show-browser
+digi2pdf --output-dir ./exports
+```
+
+Credentials are saved only after a successful login and only if you confirm the prompt. On macOS they go into Keychain; on Windows they go into Credential Manager through `keyring`.
+
+OCR is optional because it needs native tooling. Install the Python extra plus Tesseract/ocrmypdf support for your platform before using `--ocr`.
 
 ## Development
 
@@ -99,6 +139,14 @@ uv sync --dev
 uv run ruff check .
 uv run pytest
 ```
+
+Build a local one-file binary for your current platform:
+
+```sh
+uv run pyinstaller --onefile --name digi2pdf --collect-all keyring --collect-all selenium packaging/digi2pdf_entry.py
+```
+
+Windows `.exe` builds are produced by the `Build Binaries` GitHub Actions workflow and uploaded as artifacts.
 
 ## Roadmap
 

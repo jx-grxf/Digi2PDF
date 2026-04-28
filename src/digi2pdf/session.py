@@ -7,6 +7,7 @@ from time import sleep
 import numpy as np
 from PIL import Image
 from selenium.common import (
+    ElementClickInterceptedException,
     ElementNotInteractableException,
     NoSuchElementException,
     TimeoutException,
@@ -17,8 +18,10 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
+from digi2pdf.credentials import load_credentials, save_credentials
 from digi2pdf.imaging import crop_image, images_are_identical, save_images_as_pdf
 from digi2pdf.models import BookChoice, BookType, CropBox, ProgressSink, RuntimeOptions
+from digi2pdf.ocr import OcrUnavailableError, apply_ocr
 from digi2pdf.paths import safe_filename
 from digi2pdf.tui import ask_book, ask_credentials, ask_sub_book
 
@@ -61,7 +64,8 @@ class Digi2PDFSession:
         self._save_current_book(selected.title)
 
     def _login(self) -> None:
-        email, password = ask_credentials()
+        stored = None if self.options.forget_login else load_credentials()
+        email, password, remember = ask_credentials(stored)
         if not email or not password:
             raise RuntimeError("Email and password are required for login.")
 
@@ -84,9 +88,15 @@ class Digi2PDFSession:
         sleep(self.options.delay_seconds + 1)
 
         if self._exists(By.XPATH, '//*[@id="ion-input-0"]'):
-            if self._exists(By.CLASS_NAME, "alert-button"):
-                self.browser.find_element(By.CLASS_NAME, "alert-button").click()
+            self._dismiss_alert_buttons()
             raise RuntimeError("Login failed. Check your Digi4School credentials.")
+
+        if remember:
+            try:
+                save_credentials(email, password)
+                self.sink.step("Login saved securely in the system keychain")
+            except Exception as error:
+                self.sink.warn(f"Could not save login securely: {error}")
 
     def _get_books(self) -> tuple[list[str], list[object]]:
         self.browser.execute_script("document.body.style.zoom='10%'")
@@ -254,6 +264,14 @@ class Digi2PDFSession:
 
         pdf_path = book_dir / f"{book_dir.name}.pdf"
         save_images_as_pdf(page_paths, pdf_path)
+        if self.options.ocr_enabled:
+            try:
+                self.sink.step("Adding OCR text layer")
+                apply_ocr(pdf_path)
+            except OcrUnavailableError as error:
+                self.sink.warn(str(error))
+            except RuntimeError as error:
+                self.sink.warn(str(error))
         self.sink.step(f"PDF written: {pdf_path}")
 
         if not self.options.keep_images:
@@ -320,8 +338,17 @@ class Digi2PDFSession:
         self.sink.step(message)
         try:
             self.browser.find_element(locator_type, locator_value).click()
-        except (ElementNotInteractableException, TimeoutException):
-            self.sink.warn(f"Popup was detected but not clickable: {message}")
+        except (ElementClickInterceptedException, ElementNotInteractableException, TimeoutException):
+            element = self.browser.find_element(locator_type, locator_value)
+            self.browser.execute_script("arguments[0].click();", element)
+
+    def _dismiss_alert_buttons(self) -> None:
+        for button in self.browser.find_elements(By.CLASS_NAME, "alert-button"):
+            try:
+                self.browser.execute_script("arguments[0].click();", button)
+                sleep(0.2)
+            except Exception:
+                continue
 
     @staticmethod
     def _nudge_mouse(action: ActionChains) -> None:

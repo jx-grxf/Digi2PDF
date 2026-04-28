@@ -1,0 +1,29 @@
+name: Build Binaries
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  windows-exe:
+    name: Windows EXE
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --dev
+      - name: Build digi2pdf.exe
+        run: >-
+          uv run pyinstaller
+          --onefile
+          --name digi2pdf
+          --collect-all keyring
+          --collect-all selenium
+          packaging/digi2pdf_entry.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digi2pdf-windows-x64
+          path: dist/digi2pdf.exe
+          if-no-files-found: error

@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "Johannes Grof" }]
 dependencies = [
+  "keyring>=25.6.0",
   "numpy>=2.3.0",
   "pillow>=11.3.0",
   "platformdirs>=4.3.8",
@@ -19,11 +20,15 @@ dependencies = [
   "selenium>=4.34.0",
 ]
 
+[project.optional-dependencies]
+ocr = ["ocrmypdf>=16.10.0"]
+
 [project.scripts]
 digi2pdf = "digi2pdf.cli:main"
 
 [dependency-groups]
 dev = [
+  "pyinstaller>=6.16.0",
   "pytest>=8.3.5",
   "ruff>=0.11.0",
 ]

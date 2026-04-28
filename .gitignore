@@ -6,6 +6,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+*.spec
 .DS_Store
 output/
 exports/
@@ -13,3 +14,5 @@ exports/
 *.pdf
 .env
 .env.*
+
+.codexignore
