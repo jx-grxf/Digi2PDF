@@ -82,6 +82,22 @@ Use it only for books you are allowed to access and export under your account, s
 
 ## Quick Start
 
+For normal use after the repository is public:
+
+```sh
+uv tool install git+https://github.com/jx-grxf/Digi2PDF.git
+digi2pdf
+```
+
+Windows PowerShell:
+
+```powershell
+uv tool install git+https://github.com/jx-grxf/Digi2PDF.git
+digi2pdf
+```
+
+Local development:
+
 ```sh
 uv sync --dev
 uv run digi2pdf
@@ -97,6 +113,13 @@ uv run digi2pdf --ocr
 uv run digi2pdf --forget-login
 ```
 
+After global installation, drop `uv run`:
+
+```sh
+digi2pdf --show-browser
+digi2pdf --output-dir ./exports
+```
+
 Credentials are saved only after a successful login and only if you confirm the prompt. On macOS they go into Keychain; on Windows they go into Credential Manager through `keyring`.
 
 OCR is optional because it needs native tooling. Install the Python extra plus Tesseract/ocrmypdf support for your platform before using `--ocr`.
@@ -108,6 +131,14 @@ uv sync --dev
 uv run ruff check .
 uv run pytest
 ```
+
+Build a local one-file binary for your current platform:
+
+```sh
+uv run pyinstaller --onefile --name digi2pdf --collect-all keyring --collect-all selenium packaging/digi2pdf_entry.py
+```
+
+Windows `.exe` builds are produced by the `Build Binaries` GitHub Actions workflow and uploaded as artifacts.
 
 ## Roadmap
 
