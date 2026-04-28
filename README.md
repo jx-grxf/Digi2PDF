@@ -6,6 +6,7 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 
 ![Python](https://img.shields.io/badge/python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Selenium](https://img.shields.io/badge/selenium-browser_automation-43B02A?style=for-the-badge&logo=selenium&logoColor=white)
+![CI](https://img.shields.io/github/actions/workflow/status/jx-grxf/Digi2PDF/ci.yml?branch=main&style=for-the-badge&label=ci)
 ![License](https://img.shields.io/badge/license-MIT-black?style=for-the-badge)
 
 </div>
@@ -13,10 +14,10 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 ## Showcase
 
 ```text
-╭──────────────────────────────╮
-│ Digi2PDF                     │
+╭────────────────────────────────────────╮
+│ Digi2PDF                               │
 │ owned Digi4School ebooks -> clean PDFs │
-╰──────────────────────────────╯
+╰────────────────────────────────────────╯
 ● Opening Digi4School overview
 ● Capturing Mathematik 1
 ● Captured page 42
@@ -76,24 +77,31 @@ Use it only for books you are allowed to access and export under your account, s
 
 ## Requirements
 
-- Python 3.12+
 - Google Chrome
-- `uv` for local development
+- Python 3.12+ when installing as a Python CLI
+- `uv` for the recommended CLI installation and local development
+- Optional OCR: Tesseract plus `ocrmypdf` support on your platform
 
 ## Quick Start
 
-For normal use after the repository is public:
+Recommended CLI install:
 
 ```sh
 uv tool install git+https://github.com/jx-grxf/Digi2PDF.git
 digi2pdf
 ```
 
-Windows PowerShell:
+Windows users can either use the same CLI install or download `digi2pdf.exe` from the latest release assets:
 
 ```powershell
 uv tool install git+https://github.com/jx-grxf/Digi2PDF.git
 digi2pdf
+```
+
+Run the downloaded EXE from PowerShell:
+
+```powershell
+.\digi2pdf.exe
 ```
 
 Local development:
