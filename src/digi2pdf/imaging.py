@@ -3,9 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, JpegImagePlugin
 
 from digi2pdf.models import CropBox
+
+# Pillow's PDF writer delegates RGB pages to the JPEG plugin. Importing the
+# plugin explicitly keeps PDF export stable with lazy plugin registration.
+_JPEG_PLUGIN = JpegImagePlugin
 
 
 def crop_image(image_path: Path, crop_box: CropBox) -> None:

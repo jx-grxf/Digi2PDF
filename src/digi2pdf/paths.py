@@ -5,7 +5,6 @@ from pathlib import Path
 
 from platformdirs import user_data_dir
 
-
 SAFE_NAME_PATTERN = re.compile(r"[^\w .()\-]+", re.UNICODE)
 
 

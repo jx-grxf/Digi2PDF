@@ -22,7 +22,7 @@ class CropBox:
     bottom: int
 
     @classmethod
-    def from_browser_rect(cls, rect: dict[str, float], *, inset: int = 1) -> "CropBox":
+    def from_browser_rect(cls, rect: dict[str, float], *, inset: int = 1) -> CropBox:
         return cls(
             left=int(rect["left"]) + inset,
             top=int(rect["top"]) + inset,

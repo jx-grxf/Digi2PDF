@@ -6,7 +6,11 @@ from time import sleep
 
 import numpy as np
 from PIL import Image
-from selenium.common import ElementNotInteractableException, NoSuchElementException, TimeoutException
+from selenium.common import (
+    ElementNotInteractableException,
+    NoSuchElementException,
+    TimeoutException,
+)
 from selenium.webdriver import ActionChains, Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
