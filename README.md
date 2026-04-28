@@ -42,6 +42,9 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 | --- | --- |
 | Polished TUI | Rich and Questionary flow with strong contrast, status states, and arrow-key selections. |
 | Cross-platform | Designed for macOS and Windows with Chrome + Selenium. |
+| Secure login storage | Can store Digi4School credentials in the OS keychain or Windows Credential Manager. |
+| Export location picker | Lets you choose the output folder interactively or via `--output-dir`. |
+| Optional OCR | Can run an OCR post-process for searchable PDFs when `ocrmypdf` and Tesseract are available. |
 | PDF pipeline | Captures pages, crops the book canvas, removes duplicate final page, and writes a PDF. |
 | Provider handling | Supports Digi4School-style readers plus Scook and BiBox preparation paths. |
 | Clean architecture | Browser automation, TUI, image handling, and runtime options are split into maintainable modules. |
@@ -90,7 +93,13 @@ uv run digi2pdf
 uv run digi2pdf --output-dir ./exports
 uv run digi2pdf --show-browser --delay 1.0
 uv run digi2pdf --all --keep-images
+uv run digi2pdf --ocr
+uv run digi2pdf --forget-login
 ```
+
+Credentials are saved only after a successful login and only if you confirm the prompt. On macOS they go into Keychain; on Windows they go into Credential Manager through `keyring`.
+
+OCR is optional because it needs native tooling. Install the Python extra plus Tesseract/ocrmypdf support for your platform before using `--ocr`.
 
 ## Development
 

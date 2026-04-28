@@ -5,11 +5,12 @@ from pathlib import Path
 
 from digi2pdf import __version__
 from digi2pdf.browser import create_chrome_driver
+from digi2pdf.credentials import clear_credentials
 from digi2pdf.models import RuntimeOptions
 from digi2pdf.paths import default_output_dir
 from digi2pdf.session import Digi2PDFSession
 from digi2pdf.theme import Tui
-from digi2pdf.tui import ask_confirm, ask_delay
+from digi2pdf.tui import ask_confirm, ask_delay, ask_ocr_enabled, ask_output_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,11 +19,14 @@ def build_parser() -> argparse.ArgumentParser:
         description="Export owned Digi4School ebooks to PDF with a polished terminal flow.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--output-dir", type=Path, default=default_output_dir())
+    parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--delay", type=float, default=None)
     parser.add_argument("--show-browser", action="store_true", help="Run Chrome visibly for debugging.")
     parser.add_argument("--all", action="store_true", help="Try converting every visible book.")
     parser.add_argument("--keep-images", action="store_true", help="Keep intermediate PNG page captures.")
+    parser.add_argument("--ocr", action="store_true", help="Add a searchable OCR layer after export.")
+    parser.add_argument("--no-ocr-prompt", action="store_true", help="Skip the interactive OCR question.")
+    parser.add_argument("--forget-login", action="store_true", help="Delete saved Digi4School login first.")
     return parser
 
 
@@ -32,9 +36,18 @@ def main(argv: list[str] | None = None) -> int:
     tui.hero()
     tui.info_table()
 
+    if args.forget_login:
+        clear_credentials()
+        tui.success("Saved Digi4School login cleared.")
+
     delay = args.delay if args.delay is not None else ask_delay()
-    output_dir = args.output_dir.expanduser().resolve()
+    output_dir = (
+        ask_output_dir(default_output_dir())
+        if args.output_dir is None
+        else args.output_dir.expanduser().resolve()
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
+    ocr_enabled = args.ocr or (not args.no_ocr_prompt and ask_ocr_enabled())
 
     if not ask_confirm(
         "Only export books you are allowed to use offline and in line with your school/account terms.",
@@ -49,6 +62,8 @@ def main(argv: list[str] | None = None) -> int:
         headless=not args.show_browser,
         all_books=args.all,
         keep_images=args.keep_images,
+        ocr_enabled=ocr_enabled,
+        forget_login=args.forget_login,
     )
 
     try:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import getpass
+from pathlib import Path
 
 import questionary
 from questionary import Choice
 
+from digi2pdf.credentials import StoredCredentials
 from digi2pdf.models import BookChoice
 from digi2pdf.theme import THEME
 
@@ -25,10 +27,25 @@ def ask_delay(default: float = 0.5) -> float:
     return max(0.1, value)
 
 
-def ask_credentials() -> tuple[str, str]:
-    email = questionary.text("Digi4School email", style=_style()).ask()
+def ask_output_dir(default: Path) -> Path:
+    answer = questionary.text(
+        "Export location",
+        default=str(default),
+        instruction="Existing or new folder path.",
+        style=_style(),
+    ).ask()
+    return Path(answer or default).expanduser().resolve()
+
+
+def ask_credentials(stored: StoredCredentials | None = None) -> tuple[str, str, bool]:
+    if stored and ask_confirm(f"Use saved login for {stored.email}?", default=True):
+        return stored.email, stored.password, False
+
+    email_default = stored.email if stored else ""
+    email = questionary.text("Digi4School email", default=email_default, style=_style()).ask()
     password = getpass.getpass("Digi4School password: ")
-    return (email or "").strip(), password
+    remember = ask_confirm("Save login securely in the system keychain?", default=True)
+    return (email or "").strip(), password, remember
 
 
 def ask_book(book_names: list[str]) -> BookChoice | str | None:
@@ -61,6 +78,10 @@ def ask_sub_book(book_names: list[str]) -> BookChoice | None:
 
 def ask_confirm(message: str, *, default: bool = True) -> bool:
     return bool(questionary.confirm(message, default=default, style=_style()).ask())
+
+
+def ask_ocr_enabled(default: bool = False) -> bool:
+    return ask_confirm("Add OCR/searchable text layer after export?", default=default)
 
 
 def _style() -> questionary.Style:

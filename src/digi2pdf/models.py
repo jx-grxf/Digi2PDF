@@ -44,6 +44,8 @@ class RuntimeOptions:
     headless: bool
     all_books: bool
     keep_images: bool
+    ocr_enabled: bool
+    forget_login: bool
 
 
 class ProgressSink(Protocol):
