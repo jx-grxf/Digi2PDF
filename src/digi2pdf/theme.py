@@ -83,9 +83,9 @@ class Tui:
         table = Table(show_header=False, box=None, padding=(0, 1))
         table.add_column(style=THEME.muted)
         table.add_column(style=THEME.text)
-        table.add_row("platform", "macOS + Windows")
+        table.add_row("platform", "macOS + Windows + Linux")
         table.add_row("engine", "Python, Selenium, Pillow")
-        table.add_row("ui", "Rich/Questionary terminal flow")
+        table.add_row("ui", "Terminal ui")
         self.console.print(table)
 
     def step(self, message: str) -> None:
