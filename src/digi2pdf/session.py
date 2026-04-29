@@ -19,7 +19,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
 from digi2pdf.credentials import load_credentials, save_credentials
-from digi2pdf.imaging import crop_image, images_are_identical, save_images_as_pdf
+from digi2pdf.imaging import (
+    crop_image,
+    image_has_page_content,
+    images_are_identical,
+    save_images_as_pdf,
+)
 from digi2pdf.models import BookChoice, BookType, CropBox, ProgressSink, RuntimeOptions
 from digi2pdf.ocr import OcrUnavailableError, apply_ocr, recommended_ocr_jobs
 from digi2pdf.paths import safe_filename
@@ -33,6 +38,7 @@ class Digi2PDFSession:
         self.sink = sink
         self.wait = WebDriverWait(browser, 20)
         self.current_book_index: int | None = None
+        self._page_change_attempts = 8
 
     def run(self) -> None:
         self.sink.step("Opening Digi4School overview")
@@ -258,20 +264,23 @@ class Digi2PDFSession:
         self.sink.step(f"Capturing {title}")
         while True:
             page_path = book_dir / f"{page:04d}.png"
-            self.browser.save_screenshot(str(page_path))
-            crop_image(page_path, crop_box)
-            page_paths.append(page_path)
-            self.sink.capture_progress(title, page)
-
-            if len(page_paths) > 1 and images_are_identical(page_paths[-2], page_paths[-1]):
-                page_paths[-1].unlink(missing_ok=True)
-                page_paths.pop()
+            if not self._capture_page_when_ready(
+                page_path,
+                crop_box,
+                previous_path=page_paths[-1] if page_paths else None,
+            ):
+                page_path.unlink(missing_ok=True)
                 break
 
+            page_paths.append(page_path)
+            self.sink.capture_progress(title, len(page_paths))
             self._next_page(book_type)
             self._nudge_mouse(action)
             sleep(self.options.delay_seconds)
             page += 1
+
+        if not page_paths:
+            raise RuntimeError(f"No readable pages captured for {title}.")
 
         pdf_path = book_dir / f"{book_dir.name}.pdf"
         save_images_as_pdf(page_paths, pdf_path)
@@ -295,6 +304,29 @@ class Digi2PDFSession:
         if not self.options.keep_images:
             for page_path in page_paths:
                 page_path.unlink(missing_ok=True)
+
+    def _capture_page_when_ready(
+        self,
+        page_path: Path,
+        crop_box: CropBox,
+        *,
+        previous_path: Path | None,
+    ) -> bool:
+        for attempt in range(self._page_change_attempts):
+            self.browser.save_screenshot(str(page_path))
+            crop_image(page_path, crop_box)
+
+            if not image_has_page_content(page_path):
+                sleep(min(self.options.delay_seconds, 1.0))
+                continue
+
+            if previous_path is None or not images_are_identical(previous_path, page_path):
+                return True
+
+            if attempt < self._page_change_attempts - 1:
+                sleep(min(self.options.delay_seconds, 1.0))
+
+        return previous_path is None
 
     def _next_page(self, book_type: BookType) -> None:
         if book_type is BookType.DIGI4SCHOOL:
