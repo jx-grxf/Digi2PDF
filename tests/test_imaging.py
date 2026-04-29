@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
-from digi2pdf.imaging import crop_image, images_are_identical, save_images_as_pdf
+from digi2pdf.imaging import (
+    crop_image,
+    image_has_page_content,
+    images_are_identical,
+    save_images_as_pdf,
+)
 from digi2pdf.models import CropBox
 
 
@@ -27,6 +33,18 @@ def test_images_are_identical(tmp_path: Path) -> None:
     assert images_are_identical(first, second)
 
 
+def test_image_has_page_content_rejects_blank_capture(tmp_path: Path) -> None:
+    blank = tmp_path / "blank.png"
+    page = tmp_path / "page.png"
+    Image.new("RGB", (20, 20), "black").save(blank)
+    image = Image.new("RGB", (40, 40), "white")
+    ImageDraw.Draw(image).text((4, 4), "page", fill="black")
+    image.save(page)
+
+    assert not image_has_page_content(blank)
+    assert image_has_page_content(page)
+
+
 def test_save_images_as_pdf(tmp_path: Path) -> None:
     page = tmp_path / "page.png"
     pdf = tmp_path / "book.pdf"
@@ -36,3 +54,17 @@ def test_save_images_as_pdf(tmp_path: Path) -> None:
 
     assert pdf.exists()
     assert pdf.stat().st_size > 0
+
+
+def test_save_images_as_pdf_keeps_all_pages(tmp_path: Path) -> None:
+    pages = []
+    for index, color in enumerate(("blue", "green", "red"), start=1):
+        page = tmp_path / f"page-{index}.png"
+        Image.new("RGB", (20, 20), color).save(page)
+        pages.append(page)
+    pdf = tmp_path / "book.pdf"
+
+    save_images_as_pdf(pages, pdf)
+
+    contents = pdf.read_bytes()
+    assert len(re.findall(rb"/Type\s*/Page\b", contents)) == 3

@@ -28,6 +28,14 @@ def images_are_identical(first_path: Path, second_path: Path) -> bool:
         return bool(np.array_equal(np.array(first), np.array(second)))
 
 
+def image_has_page_content(image_path: Path) -> bool:
+    with Image.open(image_path) as image:
+        grayscale = image.convert("L")
+        pixels = np.array(grayscale)
+        deviation = float(pixels.std())
+        return deviation >= 3.0
+
+
 def save_images_as_pdf(image_paths: list[Path], pdf_path: Path) -> None:
     if not image_paths:
         raise ValueError("Cannot create a PDF without pages.")

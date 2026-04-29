@@ -7,8 +7,14 @@ import questionary
 from questionary import Choice
 
 from digi2pdf.credentials import StoredCredentials
-from digi2pdf.models import BookChoice
+from digi2pdf.models import BookChoice, OcrProfile
 from digi2pdf.theme import THEME
+
+OCR_PROFILES = {
+    "fast": OcrProfile("fast", "Fast - lower optimization, best for large books", 1, 0.9),
+    "balanced": OcrProfile("balanced", "Balanced - recommended", 2, 1.4),
+    "best": OcrProfile("best", "Best - strongest optimization, slowest", 3, 2.2),
+}
 
 
 def ask_delay(default: float = 0.5) -> float:
@@ -63,6 +69,21 @@ def ask_book(book_names: list[str]) -> BookChoice | str | None:
     return BookChoice(title=book_names[int(selected)], index=int(selected))
 
 
+def ask_books(book_names: list[str]) -> list[BookChoice] | str | None:
+    choices: list[Choice] = [Choice(title="Convert all books", value="all")]
+    choices.extend(Choice(title=name, value=index) for index, name in enumerate(book_names))
+    selected = questionary.checkbox(
+        "Choose ebooks with Space, then press Enter",
+        choices=choices,
+        style=_style(),
+    ).ask()
+    if selected is None:
+        return None
+    if "all" in selected:
+        return "all"
+    return [BookChoice(title=book_names[int(index)], index=int(index)) for index in selected]
+
+
 def ask_sub_book(book_names: list[str]) -> BookChoice | None:
     selected = questionary.select(
         "Choose sub-book",
@@ -82,6 +103,37 @@ def ask_confirm(message: str, *, default: bool = True) -> bool:
 
 def ask_ocr_enabled(default: bool = False) -> bool:
     return ask_confirm("Add OCR/searchable text layer after export?", default=default)
+
+
+def ask_ocr_profile(default: str = "balanced") -> OcrProfile:
+    selected = questionary.select(
+        "OCR quality/performance profile",
+        choices=[
+            Choice(title=profile.label, value=name)
+            for name, profile in OCR_PROFILES.items()
+        ],
+        default=default,
+        use_indicator=True,
+        use_shortcuts=False,
+        style=_style(),
+    ).ask()
+    return OCR_PROFILES.get(str(selected or default), OCR_PROFILES["balanced"])
+
+
+def ask_ocr_by_book(selected: list[BookChoice], *, default: bool) -> dict[int, bool]:
+    if not selected:
+        return {}
+    choices = [
+        Choice(title=choice.title, value=choice.index, checked=default)
+        for choice in selected
+    ]
+    enabled = questionary.checkbox(
+        "Choose books that should receive OCR",
+        choices=choices,
+        style=_style(),
+    ).ask()
+    enabled_set = set(enabled or [])
+    return {choice.index: choice.index in enabled_set for choice in selected}
 
 
 def _style() -> questionary.Style:
