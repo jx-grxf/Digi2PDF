@@ -59,18 +59,24 @@ class Tui:
         self.console.print(Panel.fit(Text.assemble(title, "\n", subtitle), border_style=THEME.accent))
 
     def animated_intro(self) -> None:
-        lines = [
-            "Digi2PDF",
-            "owned Digi4School ebooks -> clean PDFs",
-        ]
-        for line in lines:
-            text = Text()
-            for char in line:
-                text.append(char, style=f"bold {THEME.accent}" if line == "Digi2PDF" else THEME.muted)
-                self.console.clear()
-                self.console.print(Panel.fit(text, border_style=THEME.accent))
+        title = "Digi2PDF"
+        subtitle = "owned Digi4School ebooks -> clean PDFs"
+
+        def frame(title_text: str, subtitle_text: str = "") -> Panel:
+            content = Text.assemble(
+                Text(title_text, style=f"bold {THEME.accent}"),
+                "\n",
+                Text(subtitle_text, style=THEME.muted),
+            )
+            return Panel.fit(content, border_style=THEME.accent)
+
+        with Live(frame(""), console=self.console, refresh_per_second=24, transient=True) as live:
+            for index in range(1, len(title) + 1):
+                live.update(frame(title[:index]))
                 time.sleep(0.015)
-        self.console.clear()
+            for index in range(1, len(subtitle) + 1):
+                live.update(frame(title, subtitle[:index]))
+                time.sleep(0.015)
         self.hero()
 
     def info_table(self) -> None:

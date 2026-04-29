@@ -75,8 +75,6 @@ def ask_books(book_names: list[str]) -> list[BookChoice] | str | None:
     selected = questionary.checkbox(
         "Choose ebooks with Space, then press Enter",
         choices=choices,
-        use_indicator=True,
-        use_shortcuts=False,
         style=_style(),
     ).ask()
     if selected is None:
@@ -132,8 +130,6 @@ def ask_ocr_by_book(selected: list[BookChoice], *, default: bool) -> dict[int, b
     enabled = questionary.checkbox(
         "Choose books that should receive OCR",
         choices=choices,
-        use_indicator=True,
-        use_shortcuts=False,
         style=_style(),
     ).ask()
     enabled_set = set(enabled or [])
