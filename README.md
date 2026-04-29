@@ -24,7 +24,7 @@ ui Rich/Questionary terminal flow
 
 ✓ Chrome: /Applications/Google Chrome.app
 ✓ Tesseract: /opt/homebrew/bin/tesseract
-● Live dashboard: selected books, OCR status, total ETA, and scrollable logs
+● Live dashboard: selected books, capture phase, OCR progress, and scrollable logs
 ✓ Finished. Output folder: ~/Documents/Digi2PDF
 ```
 
@@ -48,12 +48,12 @@ ui Rich/Questionary terminal flow
 | --- | --- |
 | Polished TUI | Rich and Questionary flow with strong contrast, status states, and arrow-key selections. |
 | Multi-book picker | Select one or many books with Space and start the batch with Enter. |
-| Live dashboard | Shows selected books, output path, OCR decisions, total ETA, per-book OCR progress, and scrollable colored logs. |
+| Live dashboard | Shows selected books, output path, capture phase, OCR decisions, per-book OCR progress, and scrollable colored logs. |
 | Cross-platform | Designed for macOS and Windows with Chrome + Selenium. |
 | Secure login storage | Can store Digi4School credentials in the OS keychain or Windows Credential Manager. |
 | Export location picker | Defaults to `~/Documents/Digi2PDF` on macOS and still lets you override the folder. |
 | Optional OCR | Can run a searchable OCR post-process with fast, balanced, and best profiles when `ocrmypdf` and Tesseract are available. |
-| PDF pipeline | Captures pages, crops the book canvas, removes duplicate final page, and writes a PDF. |
+| PDF pipeline | Captures stable pages, crops the book canvas, waits for page changes, removes the duplicate final page, and writes a PDF. |
 | Provider handling | Supports Digi4School-style readers plus Scook and BiBox preparation paths. |
 | Clean architecture | Browser automation, TUI, image handling, and runtime options are split into maintainable modules. |
 
@@ -72,7 +72,7 @@ Use it only for books you are allowed to access and export under your account, s
 5. Log in to Digi4School in the Selenium-controlled Chrome session.
 6. Select one or many books with Space and Enter.
 7. Choose which selected books should receive OCR.
-8. Digi2PDF detects the viewer type, captures pages, crops them, writes a PDF, optionally adds OCR, and removes intermediate page images unless `--keep-images` is set.
+8. Digi2PDF detects the viewer type, captures stable page images, waits for page changes, writes a PDF, optionally adds OCR, and removes intermediate page images unless `--keep-images` is set.
 
 ## Tech Stack
 
@@ -141,7 +141,7 @@ digi2pdf --output-dir ./exports
 
 Credentials are saved only after a successful login and only if you confirm the prompt. On macOS they go into Keychain; on Windows they go into Credential Manager through `keyring`.
 
-OCR is optional because it needs native tooling. Install the Python extra plus Tesseract/ocrmypdf support for your platform before using `--ocr`. The CLI estimates OCR ETA from the selected quality profile, page count, and local CPU job count.
+OCR is optional because it needs native tooling. Install the Python extra plus Tesseract/ocrmypdf support for your platform before using `--ocr`. The CLI estimates OCR ETA from the selected quality profile, page count, and local CPU job count. During page capture, Digi2PDF shows the active scan phase instead of a fake ETA because the final page count is only known after the reader stops advancing.
 
 ## Legal Notice
 
@@ -161,7 +161,7 @@ Build a local one-file binary for your current platform:
 uv run pyinstaller --onefile --name digi2pdf --collect-all keyring --collect-all selenium packaging/digi2pdf_entry.py
 ```
 
-Windows `.exe` builds are produced by the `Build Binaries` GitHub Actions workflow and uploaded as artifacts.
+Windows `.exe` builds are produced by the `Build Binaries` GitHub Actions workflow and uploaded to release assets.
 
 ## Roadmap
 
