@@ -214,10 +214,15 @@ class Tui:
         options = self._dashboard_options
         output_dir = getattr(options, "output_dir", "-")
         profile = getattr(getattr(options, "ocr_profile", None), "label", "-")
+        total_status = (
+            f"elapsed {_format_duration(elapsed)} • scanning pages"
+            if eta is None
+            else f"elapsed {_format_duration(elapsed)} • eta {_format_duration(eta)}"
+        )
         table.add_row("books", f"{done}/{total} done • {', '.join(self._dashboard_titles[:3])}{' ...' if total > 3 else ''}")
         table.add_row("output", str(output_dir))
         table.add_row("ocr", f"{profile} • {self._ocr_count()} selected")
-        table.add_row("total", f"elapsed {_format_duration(elapsed)} • eta {_format_duration(eta)}")
+        table.add_row("total", total_status)
         return Panel(table, title="Digi2PDF job", border_style=THEME.accent)
 
     def _render_current_book(self) -> Panel:
@@ -231,6 +236,8 @@ class Tui:
             table.add_row("book", self._current_book)
             table.add_row("status", self._book_status.get(self._current_book, "running"))
             table.add_row("pages", str(pages))
+            if not ocr and self._book_status.get(self._current_book) == "running":
+                table.add_row("phase", "finding final page")
             if ocr:
                 completed, total, eta = ocr
                 percent = int((completed / max(total, 1)) * 100)
