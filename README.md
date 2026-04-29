@@ -18,10 +18,14 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 │ Digi2PDF                               │
 │ owned Digi4School ebooks -> clean PDFs │
 ╰────────────────────────────────────────╯
-● Opening Digi4School overview
-● Capturing Mathematik 1
-● Captured page 42
-✓ Finished. Output folder: ~/Library/Application Support/Digi2PDF/exports
+platform macOS + Windows
+engine Python, Selenium, Pillow
+ui Rich/Questionary terminal flow
+
+✓ Chrome: /Applications/Google Chrome.app
+✓ Tesseract: /opt/homebrew/bin/tesseract
+● Live dashboard: selected books, OCR status, total ETA, and scrollable logs
+✓ Finished. Output folder: ~/Documents/Digi2PDF
 ```
 
 ## Contents
@@ -33,6 +37,7 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [Usage](#usage)
+- [Legal Notice](#legal-notice)
 - [Development](#development)
 - [Roadmap](#roadmap)
 - [License](#license)
@@ -42,10 +47,12 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 | Feature | Description |
 | --- | --- |
 | Polished TUI | Rich and Questionary flow with strong contrast, status states, and arrow-key selections. |
+| Multi-book picker | Select one or many books with Space and start the batch with Enter. |
+| Live dashboard | Shows selected books, output path, OCR decisions, total ETA, per-book OCR progress, and scrollable colored logs. |
 | Cross-platform | Designed for macOS and Windows with Chrome + Selenium. |
 | Secure login storage | Can store Digi4School credentials in the OS keychain or Windows Credential Manager. |
-| Export location picker | Lets you choose the output folder interactively or via `--output-dir`. |
-| Optional OCR | Can run an OCR post-process for searchable PDFs when `ocrmypdf` and Tesseract are available. |
+| Export location picker | Defaults to `~/Documents/Digi2PDF` on macOS and still lets you override the folder. |
+| Optional OCR | Can run a searchable OCR post-process with fast, balanced, and best profiles when `ocrmypdf` and Tesseract are available. |
 | PDF pipeline | Captures pages, crops the book canvas, removes duplicate final page, and writes a PDF. |
 | Provider handling | Supports Digi4School-style readers plus Scook and BiBox preparation paths. |
 | Clean architecture | Browser automation, TUI, image handling, and runtime options are split into maintainable modules. |
@@ -54,15 +61,18 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 
 Digi2PDF is a fresh, independent rewrite around the useful idea of converting personally accessible Digi4School books into PDFs for offline study. The goal is not a copied one-file script, but a maintainable private tool with a professional terminal interface.
 
-Use it only for books you are allowed to access and export under your account, school rules, and local law.
+Use it only for books you are allowed to access and export under your account, school rules, and local law. Digi2PDF is intended for private offline study workflows, not for redistribution or bypassing access restrictions.
 
 ## Current Workflow
 
 1. Start the TUI.
-2. Choose timing/output options.
-3. Log in to Digi4School in the Selenium-controlled Chrome session.
-4. Select one book or all visible books.
-5. Digi2PDF detects the viewer type, captures pages, crops them, and writes a PDF.
+2. Confirm the private-use notice.
+3. Choose timing/output/OCR options.
+4. Digi2PDF checks the operating system, Python dependencies, Chrome, and OCR tooling when OCR is enabled.
+5. Log in to Digi4School in the Selenium-controlled Chrome session.
+6. Select one or many books with Space and Enter.
+7. Choose which selected books should receive OCR.
+8. Digi2PDF detects the viewer type, captures pages, crops them, writes a PDF, optionally adds OCR, and removes intermediate page images unless `--keep-images` is set.
 
 ## Tech Stack
 
@@ -118,6 +128,7 @@ uv run digi2pdf --output-dir ./exports
 uv run digi2pdf --show-browser --delay 1.0
 uv run digi2pdf --all --keep-images
 uv run digi2pdf --ocr
+uv run digi2pdf --ocr --ocr-quality fast
 uv run digi2pdf --forget-login
 ```
 
@@ -130,7 +141,11 @@ digi2pdf --output-dir ./exports
 
 Credentials are saved only after a successful login and only if you confirm the prompt. On macOS they go into Keychain; on Windows they go into Credential Manager through `keyring`.
 
-OCR is optional because it needs native tooling. Install the Python extra plus Tesseract/ocrmypdf support for your platform before using `--ocr`.
+OCR is optional because it needs native tooling. Install the Python extra plus Tesseract/ocrmypdf support for your platform before using `--ocr`. The CLI estimates OCR ETA from the selected quality profile, page count, and local CPU job count.
+
+## Legal Notice
+
+Digi2PDF is for private use with ebooks you are already allowed to access. Do not use it to share, sell, upload, or redistribute copyrighted material, and do not use it in ways that violate your school, account, platform, or local legal requirements.
 
 ## Development
 
@@ -154,6 +169,7 @@ Windows `.exe` builds are produced by the `Build Binaries` GitHub Actions workfl
 - Add resumable exports with per-book progress metadata.
 - Add signed release builds for macOS and Windows.
 - Add visual regression checks for crop-box detection.
+- Add safe parallel browser workers after the Selenium session model is isolated per book.
 
 ## License
 

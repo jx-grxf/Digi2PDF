@@ -8,9 +8,17 @@ from digi2pdf.browser import create_chrome_driver
 from digi2pdf.credentials import clear_credentials
 from digi2pdf.models import RuntimeOptions
 from digi2pdf.paths import default_output_dir
+from digi2pdf.preflight import run_preflight_checks
 from digi2pdf.session import Digi2PDFSession
 from digi2pdf.theme import Tui
-from digi2pdf.tui import ask_confirm, ask_delay, ask_ocr_enabled, ask_output_dir
+from digi2pdf.tui import (
+    OCR_PROFILES,
+    ask_confirm,
+    ask_delay,
+    ask_ocr_enabled,
+    ask_ocr_profile,
+    ask_output_dir,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,6 +34,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--keep-images", action="store_true", help="Keep intermediate PNG page captures.")
     parser.add_argument("--ocr", action="store_true", help="Add a searchable OCR layer after export.")
     parser.add_argument("--no-ocr-prompt", action="store_true", help="Skip the interactive OCR question.")
+    parser.add_argument(
+        "--ocr-quality",
+        choices=tuple(OCR_PROFILES),
+        default="balanced",
+        help="OCR speed/quality profile.",
+    )
     parser.add_argument("--forget-login", action="store_true", help="Delete saved Digi4School login first.")
     return parser
 
@@ -33,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     tui = Tui()
-    tui.hero()
+    tui.animated_intro()
     tui.info_table()
 
     if args.forget_login:
@@ -48,13 +62,24 @@ def main(argv: list[str] | None = None) -> int:
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     ocr_enabled = args.ocr or (not args.no_ocr_prompt and ask_ocr_enabled())
+    ocr_profile = OCR_PROFILES[args.ocr_quality]
+    if ocr_enabled and not args.no_ocr_prompt:
+        ocr_profile = ask_ocr_profile(args.ocr_quality)
 
     if not ask_confirm(
-        "Only export books you are allowed to use offline and in line with your school/account terms.",
+        "Private-use notice: only export books you may legally access and use offline. Continue?",
         default=True,
     ):
         tui.warn("Cancelled before browser start.")
         return 1
+
+    with tui.busy("Checking dependencies"):
+        checks = run_preflight_checks(require_ocr=ocr_enabled)
+    for check in checks:
+        if check.ok:
+            tui.success(f"{check.name}: {check.detail}")
+        else:
+            tui.warn(f"{check.name}: {check.detail}")
 
     options = RuntimeOptions(
         delay_seconds=delay,
@@ -63,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
         all_books=args.all,
         keep_images=args.keep_images,
         ocr_enabled=ocr_enabled,
+        ocr_by_book={},
+        ocr_profile=ocr_profile,
         forget_login=args.forget_login,
     )
 

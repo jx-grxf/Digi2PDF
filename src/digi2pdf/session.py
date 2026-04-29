@@ -21,9 +21,9 @@ from selenium.webdriver.support.wait import WebDriverWait
 from digi2pdf.credentials import load_credentials, save_credentials
 from digi2pdf.imaging import crop_image, images_are_identical, save_images_as_pdf
 from digi2pdf.models import BookChoice, BookType, CropBox, ProgressSink, RuntimeOptions
-from digi2pdf.ocr import OcrUnavailableError, apply_ocr
+from digi2pdf.ocr import OcrUnavailableError, apply_ocr, recommended_ocr_jobs
 from digi2pdf.paths import safe_filename
-from digi2pdf.tui import ask_book, ask_credentials, ask_sub_book
+from digi2pdf.tui import ask_books, ask_credentials, ask_ocr_by_book, ask_sub_book
 
 
 class Digi2PDFSession:
@@ -32,6 +32,7 @@ class Digi2PDFSession:
         self.options = options
         self.sink = sink
         self.wait = WebDriverWait(browser, 20)
+        self.current_book_index: int | None = None
 
     def run(self) -> None:
         self.sink.step("Opening Digi4School overview")
@@ -50,18 +51,27 @@ class Digi2PDFSession:
         if not book_names:
             raise RuntimeError("No books found after login.")
 
-        selected = "all" if self.options.all_books else ask_book(book_names)
+        selected = "all" if self.options.all_books else ask_books(book_names)
         if selected is None:
             self.sink.warn("Cancelled before selecting a book.")
             return
 
         if selected == "all":
-            self._save_all_books(book_elements)
+            choices = [BookChoice(title=title, index=index) for index, title in enumerate(book_names)]
+            self.options.ocr_by_book.update(
+                {choice.index: self.options.ocr_enabled for choice in choices}
+            )
+            self._save_books(choices, book_elements)
             return
 
-        assert isinstance(selected, BookChoice)
-        self._open_book(selected, book_elements[selected.index])
-        self._save_current_book(selected.title)
+        if self.options.ocr_enabled:
+            self.options.ocr_by_book.update(
+                ask_ocr_by_book(selected, default=self.options.ocr_enabled)
+            )
+        if not selected:
+            self.sink.warn("No books selected.")
+            return
+        self._save_books(selected, book_elements)
 
     def _login(self) -> None:
         stored = None if self.options.forget_login else load_credentials()
@@ -244,13 +254,14 @@ class Digi2PDFSession:
         page_paths: list[Path] = []
         page = 1
 
+        self.sink.start_book(title)
         self.sink.step(f"Capturing {title}")
         while True:
             page_path = book_dir / f"{page:04d}.png"
             self.browser.save_screenshot(str(page_path))
             crop_image(page_path, crop_box)
             page_paths.append(page_path)
-            self.sink.step(f"Captured page {page}")
+            self.sink.capture_progress(title, page)
 
             if len(page_paths) > 1 and images_are_identical(page_paths[-2], page_paths[-1]):
                 page_paths[-1].unlink(missing_ok=True)
@@ -264,15 +275,22 @@ class Digi2PDFSession:
 
         pdf_path = book_dir / f"{book_dir.name}.pdf"
         save_images_as_pdf(page_paths, pdf_path)
-        if self.options.ocr_enabled:
+        if self._ocr_enabled_for_title(title):
             try:
                 self.sink.step("Adding OCR text layer")
-                apply_ocr(pdf_path)
+                apply_ocr(
+                    pdf_path,
+                    page_count=len(page_paths),
+                    profile=self.options.ocr_profile,
+                    jobs=recommended_ocr_jobs(),
+                    title=title,
+                    sink=self.sink,
+                )
             except OcrUnavailableError as error:
                 self.sink.warn(str(error))
             except RuntimeError as error:
                 self.sink.warn(str(error))
-        self.sink.step(f"PDF written: {pdf_path}")
+        self.sink.finish_book(title, pdf_path)
 
         if not self.options.keep_images:
             for page_path in page_paths:
@@ -290,19 +308,36 @@ class Digi2PDFSession:
         else:
             raise RuntimeError(f"Cannot navigate unknown book type: {book_type.value}")
 
-    def _save_all_books(self, book_elements: list[object]) -> None:
-        for index, element in enumerate(book_elements):
-            title = element.text.strip() or f"book-{index + 1}"
-            self._open_book(BookChoice(title=title, index=index), element)
-            try:
-                self._save_current_book(title)
-            except Exception as error:
-                self.sink.warn(f"Skipped {title}: {error}")
-            finally:
-                if len(self.browser.window_handles) > 1:
-                    self.browser.close()
-                    self.browser.switch_to.window(self.browser.window_handles[0])
-                sleep(self.options.delay_seconds)
+    def _save_books(self, choices: list[BookChoice], book_elements: list[object]) -> None:
+        ocr_by_title = {
+            choice.title: self.options.ocr_by_book.get(choice.index, self.options.ocr_enabled)
+            for choice in choices
+        }
+        self.sink.start_dashboard([choice.title for choice in choices], self.options, ocr_by_title)
+        try:
+            for choice in choices:
+                title = choice.title or f"book-{choice.index + 1}"
+                self.current_book_index = choice.index
+                self._open_book(BookChoice(title=title, index=choice.index), book_elements[choice.index])
+                try:
+                    self._save_current_book(title)
+                except Exception as error:
+                    self.sink.warn(f"Skipped {title}: {error}")
+                finally:
+                    if len(self.browser.window_handles) > 1:
+                        self.browser.close()
+                        self.browser.switch_to.window(self.browser.window_handles[0])
+                    sleep(self.options.delay_seconds)
+        finally:
+            self.current_book_index = None
+            self.sink.finish_dashboard()
+
+    def _ocr_enabled_for_title(self, title: str) -> bool:
+        if not self.options.ocr_enabled:
+            return False
+        if self.current_book_index is None:
+            return self.options.ocr_enabled
+        return self.options.ocr_by_book.get(self.current_book_index, self.options.ocr_enabled)
 
     def _calculate_bibox_crop_box(self, image_path: Path) -> CropBox:
         with Image.open(image_path) as image:

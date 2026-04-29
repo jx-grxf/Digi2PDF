@@ -38,6 +38,14 @@ class BookChoice:
 
 
 @dataclass(frozen=True)
+class OcrProfile:
+    name: str
+    label: str
+    optimize_level: int
+    seconds_per_page: float
+
+
+@dataclass(frozen=True)
 class RuntimeOptions:
     delay_seconds: float
     output_dir: Path
@@ -45,6 +53,8 @@ class RuntimeOptions:
     all_books: bool
     keep_images: bool
     ocr_enabled: bool
+    ocr_by_book: dict[int, bool]
+    ocr_profile: OcrProfile
     forget_login: bool
 
 
@@ -54,3 +64,19 @@ class ProgressSink(Protocol):
     def warn(self, message: str) -> None: ...
 
     def error(self, message: str) -> None: ...
+
+    def start_dashboard(
+        self, titles: list[str], options: RuntimeOptions, ocr_by_title: dict[str, bool]
+    ) -> None: ...
+
+    def finish_dashboard(self) -> None: ...
+
+    def start_book(self, title: str) -> None: ...
+
+    def finish_book(self, title: str, pdf_path: Path) -> None: ...
+
+    def capture_progress(self, title: str, page: int) -> None: ...
+
+    def ocr_progress(
+        self, title: str, completed: int, total: int, eta_seconds: float | None
+    ) -> None: ...
