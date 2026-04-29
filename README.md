@@ -20,7 +20,7 @@ Professional cross-platform TUI for exporting owned Digi4School ebooks to clean 
 ╰────────────────────────────────────────╯
 platform macOS + Windows
 engine Python, Selenium, Pillow
-ui Rich/Questionary terminal flow
+Terminal ui
 
 ✓ Chrome: /Applications/Google Chrome.app
 ✓ Tesseract: /opt/homebrew/bin/tesseract
@@ -30,17 +30,20 @@ ui Rich/Questionary terminal flow
 
 ## Contents
 
-- [Highlights](#highlights)
-- [Why This Exists](#why-this-exists)
-- [Current Workflow](#current-workflow)
-- [Tech Stack](#tech-stack)
-- [Requirements](#requirements)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
-- [Legal Notice](#legal-notice)
-- [Development](#development)
-- [Roadmap](#roadmap)
-- [License](#license)
+- [Digi2PDF](#digi2pdf)
+  - [Showcase](#showcase)
+  - [Contents](#contents)
+  - [Highlights](#highlights)
+  - [Why This Exists](#why-this-exists)
+  - [Current Workflow](#current-workflow)
+  - [Tech Stack](#tech-stack)
+  - [Requirements](#requirements)
+  - [Quick Start](#quick-start)
+  - [Usage](#usage)
+  - [Legal Notice](#legal-notice)
+  - [Development](#development)
+  - [Roadmap](#roadmap)
+  - [License](#license)
 
 ## Highlights
 
