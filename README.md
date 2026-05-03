@@ -2,7 +2,7 @@
 
 # Digi2PDF
 
-Are you also sick of using this stupid Digi4... web editor and finally want to have a clean and searchable PDF of your books you paid for? 
+Are you also sick of using this stupid Digi4... web editor and finally want to have a clean and searchable PDF of the books you paid for? 
 
 ![Python](https://img.shields.io/badge/python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Selenium](https://img.shields.io/badge/selenium-browser_automation-43B02A?style=for-the-badge&logo=selenium&logoColor=white)
