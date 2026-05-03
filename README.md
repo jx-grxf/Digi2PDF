@@ -49,11 +49,11 @@ Terminal ui
 
 | Feature | Description |
 | --- | --- |
-| Polished TUI | Rich and Questionary flow with strong contrast, status states, and arrow-key selections. |
+| Polished TUI | Fast terminal UI flow with strong contrast, status states, and arrow-key selections. |
 | Multi-book picker | Select one or many books with Space and start the batch with Enter. |
 | Live dashboard | Shows selected books, output path, capture phase, OCR decisions, per-book OCR progress, and scrollable colored logs. |
 | Cross-platform | Designed for macOS and Windows with Chrome + Selenium. |
-| Secure login storage | Can store Digi4School credentials in the OS keychain or Windows Credential Manager. |
+| Secure login storage | Can store Digi4.... credentials in the OS keychain or Windows Credential Manager. |
 | Export location picker | Defaults to `~/Documents/Digi2PDF` on macOS and still lets you override the folder. |
 | Optional OCR | Can run a searchable OCR post-process with fast, balanced, and best profiles when `ocrmypdf` and Tesseract are available. |
 | PDF pipeline | Captures stable pages, crops the book canvas, waits for page changes, removes the duplicate final page, and writes a PDF. |
