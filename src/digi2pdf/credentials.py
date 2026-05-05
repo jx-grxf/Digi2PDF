@@ -31,6 +31,12 @@ def load_credentials() -> StoredCredentials | None:
 
 
 def save_credentials(email: str, password: str) -> None:
+    try:
+        previous_email = keyring.get_password(SERVICE_NAME, EMAIL_ACCOUNT)
+    except keyring.errors.KeyringError:
+        previous_email = None
+    if previous_email and previous_email != email:
+        _delete_password(previous_email)
     keyring.set_password(SERVICE_NAME, EMAIL_ACCOUNT, email)
     keyring.set_password(SERVICE_NAME, email, password)
 
