@@ -39,6 +39,7 @@ class Digi2PDFSession:
         self.wait = WebDriverWait(browser, 20)
         self.current_book_index: int | None = None
         self._page_change_attempts = 8
+        self._used_book_dirs: set[Path] = set()
 
     def run(self) -> None:
         self.sink.step("Opening Digi4School overview")
@@ -149,12 +150,13 @@ class Digi2PDFSession:
     def _select_sub_book(self, parent_title: str) -> str:
         self.sink.step("Sub-books detected")
         elements = self.browser.find_elements(By.CLASS_NAME, "tx")
-        names = [element.text.strip() for element in elements if element.text.strip()]
+        rows = [(element.text.strip(), element) for element in elements if element.text.strip()]
+        names = [name for name, _element in rows]
         selected = ask_sub_book(names)
         if selected is None:
             raise RuntimeError("No sub-book selected.")
 
-        elements[selected.index].click()
+        rows[selected.index][1].click()
         sleep(self.options.delay_seconds)
         self.browser.switch_to.window(self.browser.window_handles[-1])
         return f"{parent_title}/{selected.title}"
@@ -250,9 +252,10 @@ class Digi2PDFSession:
         self._capture_book(title, BookType.BIBOX, crop_box)
 
     def _capture_book(self, title: str, book_type: BookType, crop_box: CropBox) -> None:
-        book_dir = self.options.output_dir / safe_filename(title)
-        if book_dir.exists() and not self.options.keep_images:
+        book_dir = self._book_dir_for_title(title)
+        if book_dir.exists() and book_dir not in self._used_book_dirs and not self.options.keep_images:
             shutil.rmtree(book_dir)
+        self._used_book_dirs.add(book_dir)
         book_dir.mkdir(parents=True, exist_ok=True)
 
         action = ActionChains(self.browser)
@@ -326,7 +329,7 @@ class Digi2PDFSession:
             if attempt < self._page_change_attempts - 1:
                 sleep(min(self.options.delay_seconds, 1.0))
 
-        return previous_path is None
+        return False
 
     def _next_page(self, book_type: BookType) -> None:
         if book_type is BookType.DIGI4SCHOOL:
@@ -346,6 +349,7 @@ class Digi2PDFSession:
             for choice in choices
         }
         self.sink.start_dashboard([choice.title for choice in choices], self.options, ocr_by_title)
+        success_count = 0
         try:
             for choice in choices:
                 title = choice.title or f"book-{choice.index + 1}"
@@ -353,6 +357,7 @@ class Digi2PDFSession:
                 self._open_book(BookChoice(title=title, index=choice.index), book_elements[choice.index])
                 try:
                     self._save_current_book(title)
+                    success_count += 1
                 except Exception as error:
                     self.sink.warn(f"Skipped {title}: {error}")
                 finally:
@@ -363,6 +368,8 @@ class Digi2PDFSession:
         finally:
             self.current_book_index = None
             self.sink.finish_dashboard()
+        if success_count == 0:
+            raise RuntimeError("No books were exported successfully.")
 
     def _ocr_enabled_for_title(self, title: str) -> bool:
         if not self.options.ocr_enabled:
@@ -370,6 +377,19 @@ class Digi2PDFSession:
         if self.current_book_index is None:
             return self.options.ocr_enabled
         return self.options.ocr_by_book.get(self.current_book_index, self.options.ocr_enabled)
+
+    def _book_dir_for_title(self, title: str) -> Path:
+        base = safe_filename(title)
+        candidate = self.options.output_dir / base
+        if candidate not in self._used_book_dirs:
+            return candidate
+
+        suffix = 2
+        while True:
+            candidate = self.options.output_dir / f"{base}-{suffix}"
+            if candidate not in self._used_book_dirs:
+                return candidate
+            suffix += 1
 
     def _calculate_bibox_crop_box(self, image_path: Path) -> CropBox:
         with Image.open(image_path) as image:
