@@ -1,8 +1,6 @@
-name: Refresh website on release
+name: Refresh website manually
 
 on:
-  release:
-    types: [published, edited, deleted]
   workflow_dispatch:
 
 jobs:
