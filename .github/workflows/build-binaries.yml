@@ -104,8 +104,8 @@ jobs:
         shell: pwsh
         run: |
           if (-not $env:WEBSITE_DEPLOY_HOOK_URL) {
-            Write-Error "WEBSITE_DEPLOY_HOOK_URL secret is missing."
-            exit 1
+            Write-Host "WEBSITE_DEPLOY_HOOK_URL secret is missing; skipping website rebuild."
+            exit 0
           }
 
           Invoke-WebRequest -Method Post -Uri $env:WEBSITE_DEPLOY_HOOK_URL | Out-Null
