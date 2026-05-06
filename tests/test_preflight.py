@@ -8,6 +8,8 @@ from digi2pdf.preflight import (
     install_actions_for,
     install_missing_dependencies,
     missing_required_checks,
+    run_bundled_runtime_checks,
+    run_python_dependency_checks,
 )
 
 
@@ -87,3 +89,17 @@ def test_install_missing_dependencies_stops_after_failed_action(monkeypatch) -> 
 
     assert not install_missing_dependencies([PreflightCheck("Chrome", False, "missing")])
     assert calls == [("false",)]
+
+
+def test_frozen_binary_skips_python_dependency_checks(monkeypatch) -> None:
+    monkeypatch.setattr("digi2pdf.preflight.sys.frozen", True, raising=False)
+
+    assert run_python_dependency_checks() == []
+
+
+def test_frozen_binary_can_still_verify_bundled_runtime(monkeypatch) -> None:
+    monkeypatch.setattr("digi2pdf.preflight.sys.frozen", True, raising=False)
+
+    checks = run_bundled_runtime_checks()
+
+    assert {check.name for check in checks} >= {"Questionary", "Rich", "Selenium"}

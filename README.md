@@ -93,6 +93,7 @@ Use it only for books you are allowed to access and export under your account, s
 - Google Chrome
 - Python 3.12+ when installing as a Python CLI
 - `uv` for the recommended CLI installation and local development
+- No Python or `uv` installation is needed when using the Windows release EXE
 - Optional OCR: Tesseract plus `ocrmypdf` support on your platform
 
 ## Quick Start
@@ -104,17 +105,19 @@ uv tool install git+https://github.com/jx-grxf/Digi2PDF.git
 digi2pdf
 ```
 
-Windows users can either use the same CLI install or download `digi2pdf.exe` from the latest release assets:
+Windows users can either use the same CLI install or download the latest `digi2pdf-*-windows-x64.exe` release asset:
+
+```powershell
+.\digi2pdf-v0.0.0-windows-x64.exe
+```
+
+The EXE bundles the required Python packages. Google Chrome still needs to be installed separately because Selenium controls the real browser.
+
+If you prefer the Python CLI:
 
 ```powershell
 uv tool install git+https://github.com/jx-grxf/Digi2PDF.git
 digi2pdf
-```
-
-Run the downloaded EXE from PowerShell:
-
-```powershell
-.\digi2pdf.exe
 ```
 
 Local development:
@@ -161,10 +164,10 @@ uv run pytest
 Build a local one-file binary for your current platform:
 
 ```sh
-uv run pyinstaller --onefile --name digi2pdf --collect-all keyring --collect-all selenium packaging/digi2pdf_entry.py
+uv run pyinstaller --clean --noconfirm --onefile --name digi2pdf --collect-all keyring --collect-all PIL --collect-all platformdirs --collect-all questionary --collect-all rich --collect-all selenium packaging/digi2pdf_entry.py
 ```
 
-Windows `.exe` builds are produced by the `Build Binaries` GitHub Actions workflow and uploaded to release assets.
+Windows `.exe` builds are produced by the `Build Binaries` GitHub Actions workflow when a GitHub release is published. The workflow runs tests, smoke-tests `digi2pdf.exe --version`, and uploads the versioned EXE plus a SHA256 checksum to the release assets.
 
 ## Roadmap
 
