@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
+import sys
 from pathlib import Path
 
 from digi2pdf import __version__
 from digi2pdf.preflight import (
     OCR_CHECK_NAMES,
+    PreflightCheck,
     install_actions_for,
     install_missing_dependencies,
     is_frozen_app,
     missing_required_checks,
+    refresh_installed_dependency_paths,
     resolve_chrome_binary,
     run_bundled_runtime_checks,
     run_preflight_checks,
@@ -111,54 +115,25 @@ def main(argv: list[str] | None = None) -> int:
 
     missing_checks = missing_required_checks(checks)
     if missing_checks:
-        missing_ocr_only = all(check.name in OCR_CHECK_NAMES for check in missing_checks)
-        actions = install_actions_for(missing_checks)
-        if not actions:
-            tui.error(
-                "Required dependencies are missing and Digi2PDF cannot install them automatically."
-            )
-            if missing_ocr_only:
-                tui.warn("Continuing without OCR.")
-                ocr_enabled = False
-            else:
-                return 1
-        elif missing_ocr_only:
-            tui.warn("OCR dependencies can be installed now:")
-            for action in actions:
-                tui.warn(f"{action.label}: {shlex.join(action.command)}")
-            if ask_confirm("Install OCR dependencies now?", default=True):
-                with tui.busy("Installing OCR dependencies"):
-                    installed = install_missing_dependencies(missing_checks)
-                if not installed:
-                    tui.warn("OCR dependency installation failed. Continuing without OCR.")
-                    ocr_enabled = False
-            else:
-                tui.warn("Continuing without OCR.")
-                ocr_enabled = False
-        else:
-            tui.warn("Missing dependencies can be installed now:")
-            for action in actions:
-                tui.warn(f"{action.label}: {shlex.join(action.command)}")
+        resolved, ocr_enabled = resolve_missing_dependencies(
+            missing_checks,
+            require_ocr=ocr_enabled,
+            tui=tui,
+            ask_confirm=ask_confirm,
+        )
+        if not resolved:
+            return 1
 
-            if not ask_confirm("Install missing dependencies now?", default=True):
-                tui.error("Cancelled because required dependencies are missing.")
-                return 1
-
-            with tui.busy("Installing missing dependencies"):
-                installed = install_missing_dependencies(missing_checks)
-            if not installed:
-                tui.error("Dependency installation failed. Fix the commands above, then run Digi2PDF again.")
-                return 1
-
-        if not ocr_enabled and missing_ocr_only:
-            checks = run_preflight_checks(require_ocr=False)
-        else:
-            with tui.busy("Rechecking dependencies"):
-                checks = run_preflight_checks(require_ocr=ocr_enabled)
+        with tui.busy("Rechecking dependencies"):
+            refresh_installed_dependency_paths()
+            checks = run_preflight_checks(require_ocr=ocr_enabled)
         still_missing = missing_required_checks(checks)
         if still_missing:
             for check in still_missing:
                 tui.error(f"{check.name}: {check.detail}")
+            if ask_confirm("Restart Digi2PDF now to finish dependency setup?", default=True):
+                restart_current_process()
+                return 0
             return 1
         for check in checks:
             tui.success(f"{check.name}: {check.detail}")
@@ -208,6 +183,59 @@ def _delay_arg(value: str) -> float:
     if delay < 0.1:
         raise argparse.ArgumentTypeError("delay must be at least 0.1 seconds")
     return delay
+
+
+def split_missing_checks(
+    checks: list[PreflightCheck],
+) -> tuple[list[PreflightCheck], list[PreflightCheck]]:
+    missing_ocr_checks = [check for check in checks if check.name in OCR_CHECK_NAMES]
+    blocking_checks = [check for check in checks if check.name not in OCR_CHECK_NAMES]
+    return missing_ocr_checks, blocking_checks
+
+
+def resolve_missing_dependencies(
+    checks: list[PreflightCheck],
+    *,
+    require_ocr: bool,
+    tui: object,
+    ask_confirm: object,
+) -> tuple[bool, bool]:
+    missing_ocr_checks, blocking_checks = split_missing_checks(checks)
+    actions = install_actions_for(checks)
+
+    if actions:
+        tui.warn("Missing dependencies can be installed now:")
+        for action in actions:
+            tui.warn(f"{action.label}: {shlex.join(action.command)}")
+
+        if ask_confirm("Install missing dependencies now?", default=True):
+            with tui.busy("Installing missing dependencies"):
+                installed = install_missing_dependencies(checks)
+            if installed:
+                return True, require_ocr
+            tui.error("Dependency installation failed.")
+        else:
+            tui.warn("Dependency installation skipped.")
+
+    elif blocking_checks:
+        tui.error("Required dependencies are missing and Digi2PDF cannot install them automatically.")
+
+    if blocking_checks:
+        for check in blocking_checks:
+            tui.error(f"{check.name}: {check.detail}")
+            if check.install_hint:
+                tui.warn(f"{check.name} fix: {check.install_hint}")
+        return False, require_ocr
+
+    if missing_ocr_checks and ask_confirm("Continue without OCR for this run?", default=False):
+        tui.warn("Continuing without OCR by user choice.")
+        return True, False
+
+    return False, require_ocr
+
+
+def restart_current_process() -> None:
+    os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
 def ensure_python_dependencies() -> bool:

@@ -55,7 +55,7 @@ Terminal ui
 | Cross-platform | Designed for macOS and Windows with Chrome + Selenium. |
 | Secure login storage | Can store Digi4.... credentials in the OS keychain or Windows Credential Manager. |
 | Export location picker | Defaults to `~/Documents/Digi2PDF` on macOS and still lets you override the folder. |
-| Optional OCR | Can run a searchable OCR post-process with fast, balanced, and best profiles when `ocrmypdf` and Tesseract are available. |
+| Optional OCR | Can run a searchable OCR post-process with fast, balanced, and best profiles when OCRmyPDF and Tesseract are available. |
 | PDF pipeline | Captures stable pages, crops the book canvas, waits for page changes, removes the duplicate final page, and writes a PDF. |
 | Provider handling | Supports Digi4School-style readers plus Scook and BiBox preparation paths. |
 | Clean architecture | Browser automation, TUI, image handling, and runtime options are split into maintainable modules. |
@@ -94,7 +94,7 @@ Use it only for books you are allowed to access and export under your account, s
 - Python 3.12+ when installing as a Python CLI
 - `uv` for the recommended CLI installation and local development
 - No Python or `uv` installation is needed when using the Windows release EXE
-- Optional OCR: Tesseract plus `ocrmypdf` support on your platform
+- Optional OCR: Tesseract. The Windows release EXE bundles the OCRmyPDF Python runtime; normal Python installs receive it as a package dependency.
 
 ## Quick Start
 
@@ -147,7 +147,7 @@ digi2pdf --output-dir ./exports
 
 Credentials are saved only after a successful login and only if you confirm the prompt. On macOS they go into Keychain; on Windows they go into Credential Manager through `keyring`.
 
-OCR is optional because it needs native tooling. Install the Python extra plus Tesseract/ocrmypdf support for your platform before using `--ocr`. The CLI estimates OCR ETA from the selected quality profile, page count, and local CPU job count. During page capture, Digi2PDF shows the active scan phase instead of a fake ETA because the final page count is only known after the reader stops advancing.
+OCR is optional because it still needs native Tesseract tooling. When OCR is enabled and a system dependency is missing, Digi2PDF offers install commands, rechecks the result, and asks for a restart if the new tools are not visible in the current terminal yet. The CLI estimates OCR ETA from the selected quality profile, page count, and local CPU job count. During page capture, Digi2PDF shows the active scan phase instead of a fake ETA because the final page count is only known after the reader stops advancing.
 
 ## Legal Notice
 

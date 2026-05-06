@@ -299,9 +299,9 @@ class Digi2PDFSession:
                     sink=self.sink,
                 )
             except OcrUnavailableError as error:
-                self.sink.warn(str(error))
+                raise RuntimeError(str(error)) from error
             except RuntimeError as error:
-                self.sink.warn(str(error))
+                raise RuntimeError(str(error)) from error
         self.sink.finish_book(title, pdf_path)
 
         if not self.options.keep_images:

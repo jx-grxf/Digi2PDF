@@ -49,12 +49,11 @@ def test_install_actions_offer_only_missing_ocr_native_tools(monkeypatch) -> Non
     actions = install_actions_for(
         [
             PreflightCheck("Tesseract", False, "missing"),
-            PreflightCheck("OCRmyPDF", False, "missing"),
         ]
     )
 
     commands = [action.command for action in actions]
-    assert ("brew", "install", "ocrmypdf", "tesseract") in commands
+    assert ("brew", "install", "tesseract") in commands
 
 
 def test_install_actions_do_not_install_present_ocr_tools(monkeypatch) -> None:
@@ -67,6 +66,27 @@ def test_install_actions_do_not_install_present_ocr_tools(monkeypatch) -> None:
     actions = install_actions_for([PreflightCheck("Tesseract", False, "missing")])
 
     assert [action.command for action in actions] == [("brew", "install", "tesseract")]
+
+
+def test_windows_winget_actions_pin_winget_source(monkeypatch) -> None:
+    monkeypatch.setattr("digi2pdf.preflight.platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "digi2pdf.preflight.shutil.which",
+        lambda binary: "C:/Windows/System32/winget.exe" if binary == "winget" else None,
+    )
+
+    actions = install_actions_for(
+        [
+            PreflightCheck("Chrome", False, "missing"),
+            PreflightCheck("Tesseract", False, "missing"),
+        ]
+    )
+
+    assert actions
+    assert all("--source" in action.command for action in actions)
+    assert all("winget" in action.command for action in actions)
+    assert all("--accept-package-agreements" in action.command for action in actions)
+    assert all("--accept-source-agreements" in action.command for action in actions)
 
 
 def test_install_missing_dependencies_stops_after_failed_action(monkeypatch) -> None:
