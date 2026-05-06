@@ -265,21 +265,17 @@ wheels = [
 
 [[package]]
 name = "digi2pdf"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "keyring" },
     { name = "numpy" },
+    { name = "ocrmypdf" },
     { name = "pillow" },
     { name = "platformdirs" },
     { name = "questionary" },
     { name = "rich" },
     { name = "selenium" },
-]
-
-[package.optional-dependencies]
-ocr = [
-    { name = "ocrmypdf" },
 ]
 
 [package.dev-dependencies]
@@ -293,14 +289,13 @@ dev = [
 requires-dist = [
     { name = "keyring", specifier = ">=25.6.0" },
     { name = "numpy", specifier = ">=2.3.0" },
-    { name = "ocrmypdf", marker = "extra == 'ocr'", specifier = ">=16.10.0" },
+    { name = "ocrmypdf", specifier = ">=16.10.0" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "platformdirs", specifier = ">=4.3.8" },
     { name = "questionary", specifier = ">=2.1.0" },
     { name = "rich", specifier = ">=14.0.0" },
     { name = "selenium", specifier = ">=4.34.0" },
 ]
-provides-extras = ["ocr"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from digi2pdf.models import OcrProfile, ProgressSink
@@ -31,17 +32,58 @@ def apply_ocr(
     title: str,
     sink: ProgressSink,
 ) -> Path:
-    binary = shutil.which("ocrmypdf")
-    if binary is None:
-        raise OcrUnavailableError(
-            "OCR is enabled, but 'ocrmypdf' is not installed. Install it with the ocr extra "
-            "and make sure Tesseract is available."
+    ocr_path = pdf_path.with_name(f"{pdf_path.stem}.ocr.pdf")
+    command = _ocrmypdf_command()
+    if command is not None:
+        _apply_ocr_with_command(
+            command,
+            pdf_path,
+            ocr_path,
+            page_count=page_count,
+            profile=profile,
+            jobs=jobs,
+            title=title,
+            sink=sink,
+        )
+    else:
+        _apply_ocr_with_api(
+            pdf_path,
+            ocr_path,
+            page_count=page_count,
+            profile=profile,
+            jobs=jobs,
+            title=title,
+            sink=sink,
         )
 
-    ocr_path = pdf_path.with_name(f"{pdf_path.stem}.ocr.pdf")
+    sink.ocr_progress(title, page_count, page_count, 0)
+    ocr_path.replace(pdf_path)
+    return pdf_path
+
+
+def _ocrmypdf_command() -> list[str] | None:
+    binary = shutil.which("ocrmypdf")
+    if binary is not None:
+        return [binary]
+    return None
+
+
+def _apply_ocr_with_command(
+    command_prefix: list[str],
+    pdf_path: Path,
+    ocr_path: Path,
+    *,
+    page_count: int,
+    profile: OcrProfile,
+    jobs: int,
+    title: str,
+    sink: ProgressSink,
+) -> None:
     command = [
-        binary,
+        *command_prefix,
         "--skip-text",
+        "--output-type",
+        "pdf",
         "--optimize",
         str(profile.optimize_level),
         "--jobs",
@@ -65,9 +107,47 @@ def apply_ocr(
             details = output.read().strip() or "unknown OCR error"
             raise RuntimeError(f"OCR failed: {details}")
 
-    sink.ocr_progress(title, page_count, page_count, 0)
-    ocr_path.replace(pdf_path)
-    return pdf_path
+
+def _apply_ocr_with_api(
+    pdf_path: Path,
+    ocr_path: Path,
+    *,
+    page_count: int,
+    profile: OcrProfile,
+    jobs: int,
+    title: str,
+    sink: ProgressSink,
+) -> None:
+    try:
+        import ocrmypdf
+    except ImportError as error:
+        raise OcrUnavailableError(
+            "OCR is enabled, but OCRmyPDF is not bundled or installed."
+        ) from error
+
+    started_at = time.monotonic()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            ocrmypdf.ocr,
+            pdf_path,
+            ocr_path,
+            skip_text=True,
+            output_type="pdf",
+            optimize=profile.optimize_level,
+            jobs=max(1, jobs),
+            progress_bar=False,
+        )
+        while not future.done():
+            elapsed = time.monotonic() - started_at
+            expected_total = max(page_count * profile.seconds_per_page / max(1, jobs), 1.0)
+            completed_pages = min(page_count - 1, int((elapsed / expected_total) * page_count))
+            eta = max(expected_total - elapsed, 0.0)
+            sink.ocr_progress(title, completed_pages, page_count, eta)
+            time.sleep(0.5)
+        result = future.result()
+
+    if result not in (None, 0):
+        raise RuntimeError(f"OCR failed with exit code {result}.")
 
 
 def os_cpu_count() -> int:

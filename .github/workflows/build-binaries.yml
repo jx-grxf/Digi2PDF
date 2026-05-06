@@ -29,7 +29,9 @@ jobs:
           --onefile
           --name digi2pdf
           --collect-all keyring
+          --collect-all ocrmypdf
           --collect-all PIL
+          --collect-all pypdfium2
           --collect-all platformdirs
           --collect-all questionary
           --collect-all rich

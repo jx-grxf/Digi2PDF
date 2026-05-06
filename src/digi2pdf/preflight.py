@@ -27,6 +27,7 @@ class InstallAction:
 PYTHON_DEPENDENCIES = {
     "Keyring": ("keyring", "keyring"),
     "Numpy": ("numpy", "numpy"),
+    "OCRmyPDF": ("ocrmypdf", "ocrmypdf"),
     "Pillow": ("PIL", "pillow"),
     "Platformdirs": ("platformdirs", "platformdirs"),
     "Questionary": ("questionary", "questionary"),
@@ -36,6 +37,7 @@ PYTHON_DEPENDENCIES = {
 
 
 OCR_CHECK_NAMES = {"Tesseract", "OCRmyPDF"}
+OCR_SYSTEM_CHECK_NAMES = {"Tesseract"}
 
 
 def run_python_dependency_checks() -> list[PreflightCheck]:
@@ -63,7 +65,6 @@ def run_preflight_checks(*, require_ocr: bool) -> list[PreflightCheck]:
     ]
     if require_ocr:
         checks.append(_binary_check("Tesseract", "tesseract"))
-        checks.append(_binary_check("OCRmyPDF", "ocrmypdf"))
     return checks
 
 
@@ -91,7 +92,7 @@ def install_actions_for(checks: list[PreflightCheck]) -> list[InstallAction]:
     if "Chrome" in missing:
         actions.extend(_chrome_install_actions())
 
-    if missing.intersection(OCR_CHECK_NAMES):
+    if missing.intersection(OCR_SYSTEM_CHECK_NAMES):
         actions.extend(_ocr_install_actions(missing))
 
     return _dedupe_actions(actions)
@@ -107,7 +108,48 @@ def install_missing_dependencies(checks: list[PreflightCheck]) -> bool:
         result = subprocess.run(action.command, check=False)
         if result.returncode != 0:
             return False
+    refresh_installed_dependency_paths()
     return True
+
+
+def refresh_installed_dependency_paths() -> None:
+    if platform.system() != "Windows":
+        return
+
+    paths = [os.environ.get("PATH", "")]
+    try:
+        import winreg
+
+        for root, subkey in (
+            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+            (winreg.HKEY_CURRENT_USER, "Environment"),
+        ):
+            try:
+                with winreg.OpenKey(root, subkey) as key:
+                    value, _value_type = winreg.QueryValueEx(key, "Path")
+            except OSError:
+                continue
+            paths.append(value)
+    except Exception:
+        pass
+
+    for path in _windows_tool_parent_candidates():
+        if path.exists():
+            paths.append(str(path))
+
+    seen: set[str] = set()
+    merged: list[str] = []
+    for path_list in paths:
+        for path in path_list.split(os.pathsep):
+            normalized = path.strip()
+            if not normalized:
+                continue
+            key = normalized.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(normalized)
+    os.environ["PATH"] = os.pathsep.join(merged)
 
 
 def _python_package_check(label: str, module_name: str) -> PreflightCheck:
@@ -122,10 +164,12 @@ def _python_package_check(label: str, module_name: str) -> PreflightCheck:
 
 def _binary_check(label: str, binary_name: str) -> PreflightCheck:
     path = shutil.which(binary_name)
+    if path is None:
+        path = _candidate_binary_path(binary_name)
     return PreflightCheck(
         label,
         path is not None,
-        path or "missing",
+        str(path) if path else "missing",
         None if path else f"Install '{binary_name}' and make sure it is on PATH.",
     )
 
@@ -139,7 +183,7 @@ def _chrome_check() -> PreflightCheck:
         "Chrome",
         False,
         "missing",
-        "Install Google Chrome or Chromium before starting the browser.",
+        "Install Google Chrome from https://www.google.com/chrome/ before starting Digi2PDF.",
     )
 
 
@@ -185,6 +229,42 @@ def _platform_chrome_candidates() -> list[Path]:
     return []
 
 
+def _candidate_binary_path(binary_name: str) -> Path | None:
+    if platform.system() != "Windows":
+        return None
+
+    executable_name = binary_name if binary_name.endswith(".exe") else f"{binary_name}.exe"
+    for parent in _windows_tool_parent_candidates():
+        candidate = parent / executable_name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _windows_tool_parent_candidates() -> list[Path]:
+    roots = [
+        os.environ.get("PROGRAMFILES"),
+        os.environ.get("PROGRAMFILES(X86)"),
+        os.environ.get("LOCALAPPDATA"),
+    ]
+    candidates: list[Path] = []
+    for root in roots:
+        if not root:
+            continue
+        base = Path(root)
+        candidates.extend(
+            [
+                base / "Tesseract-OCR",
+                base / "OCRmyPDF",
+                base / "OCRmyPDF" / "bin",
+                base / "Programs" / "OCRmyPDF",
+                base / "Programs" / "OCRmyPDF" / "bin",
+                base / "Python312" / "Scripts",
+            ]
+        )
+    return candidates
+
+
 def _chrome_install_actions() -> list[InstallAction]:
     system = platform.system()
     if system == "Darwin" and shutil.which("brew"):
@@ -198,7 +278,18 @@ def _chrome_install_actions() -> list[InstallAction]:
         return [
             InstallAction(
                 "Install Google Chrome with winget",
-                ("winget", "install", "--id", "Google.Chrome", "-e"),
+                (
+                    "winget",
+                    "install",
+                    "--id",
+                    "Google.Chrome",
+                    "-e",
+                    "--source",
+                    "winget",
+                    "--accept-package-agreements",
+                    "--accept-source-agreements",
+                    "--disable-interactivity",
+                ),
             )
         ]
     return []
@@ -216,18 +307,22 @@ def _ocr_install_actions(missing: set[str]) -> list[InstallAction]:
         if packages:
             actions.append(InstallAction("Install OCR native tools", ("brew", "install", *packages)))
     elif system == "Windows" and shutil.which("winget"):
-        if "OCRmyPDF" in missing:
-            actions.append(
-                InstallAction(
-                    "Install OCRmyPDF",
-                    ("winget", "install", "--id", "OCRmyPDF.OCRmyPDF", "-e"),
-                )
-            )
         if "Tesseract" in missing:
             actions.append(
                 InstallAction(
                     "Install Tesseract",
-                    ("winget", "install", "--id", "UB-Mannheim.TesseractOCR", "-e"),
+                    (
+                        "winget",
+                        "install",
+                        "--id",
+                        "UB-Mannheim.TesseractOCR",
+                        "-e",
+                        "--source",
+                        "winget",
+                        "--accept-package-agreements",
+                        "--accept-source-agreements",
+                        "--disable-interactivity",
+                    ),
                 )
             )
     elif system == "Linux":
@@ -243,13 +338,6 @@ def _ocr_install_actions(missing: set[str]) -> list[InstallAction]:
                     ("sudo", "apt-get", "install", "-y", *packages),
                 )
             )
-    elif "OCRmyPDF" in missing:
-        actions.append(
-            InstallAction(
-                "Install OCRmyPDF Python package",
-                (sys.executable, "-m", "pip", "install", "ocrmypdf"),
-            )
-        )
     return actions
 
 
