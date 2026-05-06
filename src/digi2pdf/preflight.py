@@ -39,6 +39,16 @@ OCR_CHECK_NAMES = {"Tesseract", "OCRmyPDF"}
 
 
 def run_python_dependency_checks() -> list[PreflightCheck]:
+    if is_frozen_app():
+        return []
+
+    return [
+        _python_package_check(label, module_name)
+        for label, (module_name, _package_name) in PYTHON_DEPENDENCIES.items()
+    ]
+
+
+def run_bundled_runtime_checks() -> list[PreflightCheck]:
     return [
         _python_package_check(label, module_name)
         for label, (module_name, _package_name) in PYTHON_DEPENDENCIES.items()
@@ -85,6 +95,10 @@ def install_actions_for(checks: list[PreflightCheck]) -> list[InstallAction]:
         actions.extend(_ocr_install_actions(missing))
 
     return _dedupe_actions(actions)
+
+
+def is_frozen_app() -> bool:
+    return bool(getattr(sys, "frozen", False)) or hasattr(sys, "_MEIPASS")
 
 
 def install_missing_dependencies(checks: list[PreflightCheck]) -> bool:

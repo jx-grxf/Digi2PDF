@@ -9,8 +9,10 @@ from digi2pdf.preflight import (
     OCR_CHECK_NAMES,
     install_actions_for,
     install_missing_dependencies,
+    is_frozen_app,
     missing_required_checks,
     resolve_chrome_binary,
+    run_bundled_runtime_checks,
     run_preflight_checks,
     run_python_dependency_checks,
 )
@@ -42,7 +44,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    if not ensure_python_dependencies():
+    if is_frozen_app():
+        missing_bundle_checks = missing_required_checks(run_bundled_runtime_checks())
+        if missing_bundle_checks:
+            print("This Digi2PDF EXE is incomplete and cannot start the TUI.")
+            print("Download the Windows release asset again or rebuild the EXE from CI.")
+            print("Missing bundled modules:")
+            for check in missing_bundle_checks:
+                print(f"- {check.name}: {check.detail}")
+            return 1
+    elif not ensure_python_dependencies():
         return 1
 
     from digi2pdf.browser import create_chrome_driver
@@ -200,6 +211,9 @@ def _delay_arg(value: str) -> float:
 
 
 def ensure_python_dependencies() -> bool:
+    if is_frozen_app():
+        return True
+
     missing = missing_required_checks(run_python_dependency_checks())
     if not missing:
         return True
