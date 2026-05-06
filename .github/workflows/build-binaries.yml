@@ -53,6 +53,8 @@ jobs:
           "$($hash.Hash.ToLower())  $assetName" | Set-Content -Encoding ascii "$assetPath.sha256"
           "asset_path=$assetPath" >> $env:GITHUB_OUTPUT
           "checksum_path=$assetPath.sha256" >> $env:GITHUB_OUTPUT
+          "asset_name=$assetName" >> $env:GITHUB_OUTPUT
+          "checksum_name=$assetName.sha256" >> $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@v4
         with:
           name: digi2pdf-windows-x64
@@ -67,3 +69,43 @@ jobs:
           "${{ steps.assets.outputs.asset_path }}"
           "${{ steps.assets.outputs.checksum_path }}"
           --clobber
+      - name: Wait for release assets
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          $expected = @(
+            "${{ steps.assets.outputs.asset_name }}",
+            "${{ steps.assets.outputs.checksum_name }}"
+          )
+
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
+            $release = gh release view $tag --json assets | ConvertFrom-Json
+            $assetNames = @($release.assets | ForEach-Object { $_.name })
+            $missing = @($expected | Where-Object { $assetNames -notcontains $_ })
+
+            if ($missing.Count -eq 0) {
+              Write-Host "Release assets are visible: $($expected -join ', ')"
+              exit 0
+            }
+
+            Write-Host "Waiting for release assets: $($missing -join ', ')"
+            Start-Sleep -Seconds 5
+          }
+
+          Write-Error "Release assets did not become visible in time."
+          exit 1
+      - name: Trigger website rebuild
+        if: github.event_name == 'release'
+        env:
+          WEBSITE_DEPLOY_HOOK_URL: ${{ secrets.WEBSITE_DEPLOY_HOOK_URL }}
+        shell: pwsh
+        run: |
+          if (-not $env:WEBSITE_DEPLOY_HOOK_URL) {
+            Write-Error "WEBSITE_DEPLOY_HOOK_URL secret is missing."
+            exit 1
+          }
+
+          Invoke-WebRequest -Method Post -Uri $env:WEBSITE_DEPLOY_HOOK_URL | Out-Null
