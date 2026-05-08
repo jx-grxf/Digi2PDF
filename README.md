@@ -57,7 +57,7 @@ Terminal ui
 | Export location picker | Defaults to `~/Documents/Digi2PDF` on macOS and still lets you override the folder. |
 | Optional OCR | Can run a searchable OCR post-process with fast, balanced, and best profiles when OCRmyPDF and Tesseract are available. |
 | PDF pipeline | Captures stable pages, crops the book canvas, waits for page changes, removes the duplicate final page, and writes a PDF. |
-| Provider handling | Supports Digi4School-style readers plus Scook and BiBox preparation paths. |
+| Provider handling | Supports Digi4....-style readers plus Scook and BiBox preparation paths. |
 | Clean architecture | Browser automation, TUI, image handling, and runtime options are split into maintainable modules. |
 
 ## Why This Exists
