@@ -109,6 +109,7 @@ def ask_books(book_names: list[str]) -> list[BookChoice] | str | None:
         "Choose ebooks with Space, then press Enter",
         choices=choices,
         use_search_filter=True,
+        use_jk_keys=False,
         style=_style(),
     ).ask()
     if selected is None:

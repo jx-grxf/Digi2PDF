@@ -25,12 +25,14 @@ def test_ask_books_separates_all_from_manual_selection(monkeypatch) -> None:
     assert tui.ask_books(["Math", "English"]) == "all"
 
 
-def test_ask_books_manual_selection_has_no_all_choice(monkeypatch) -> None:
+def test_ask_books_manual_selection_uses_prefix_search_without_jk_keys(monkeypatch) -> None:
     captured_choices: list[object] = []
+    captured_kwargs: dict[str, object] = {}
     monkeypatch.setattr(tui, "ask_book_scope", lambda: "select")
 
     def fake_checkbox(_message: str, *, choices: list[object], **_kwargs: object) -> SimpleNamespace:
         captured_choices.extend(choices)
+        captured_kwargs.update(_kwargs)
         return SimpleNamespace(ask=lambda: [1])
 
     monkeypatch.setattr(tui.questionary, "checkbox", fake_checkbox)
@@ -39,3 +41,5 @@ def test_ask_books_manual_selection_has_no_all_choice(monkeypatch) -> None:
 
     assert selected == [tui.BookChoice(title="English", index=1)]
     assert [choice.value for choice in captured_choices] == [0, 1]
+    assert captured_kwargs["use_search_filter"] is True
+    assert captured_kwargs["use_jk_keys"] is False
