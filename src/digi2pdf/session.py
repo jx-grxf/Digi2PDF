@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from time import sleep
 
@@ -18,7 +17,7 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
-from digi2pdf.credentials import load_credentials, save_credentials
+from digi2pdf.credentials import clear_credentials, load_credentials, save_credentials
 from digi2pdf.imaging import (
     crop_image,
     image_has_page_content,
@@ -28,7 +27,23 @@ from digi2pdf.imaging import (
 from digi2pdf.models import BookChoice, BookType, CropBox, ProgressSink, RuntimeOptions
 from digi2pdf.ocr import OcrUnavailableError, apply_ocr, recommended_ocr_jobs
 from digi2pdf.paths import safe_filename
-from digi2pdf.tui import ask_books, ask_credentials, ask_ocr_by_book, ask_sub_book
+from digi2pdf.tui import (
+    LOGIN_CANCEL,
+    LOGIN_CLEAR,
+    LOGIN_DIFFERENT,
+    OCR_FAIL,
+    OCR_KEEP_PDF,
+    OCR_RETRY,
+    ask_books,
+    ask_credentials,
+    ask_login_recovery,
+    ask_ocr_by_book,
+    ask_ocr_failure_action,
+    ask_retry_failed_books,
+    ask_sub_book,
+)
+
+MANAGED_MARKER = ".digi2pdf-export"
 
 
 class Digi2PDFSession:
@@ -41,7 +56,7 @@ class Digi2PDFSession:
         self._page_change_attempts = 8
         self._used_book_dirs: set[Path] = set()
 
-    def run(self) -> None:
+    def run(self) -> bool:
         self.sink.step("Opening Digi4School overview")
         self.browser.get("https://digi4school.at/overview")
         self.wait.until(
@@ -61,15 +76,14 @@ class Digi2PDFSession:
         selected = "all" if self.options.all_books else ask_books(book_names)
         if selected is None:
             self.sink.warn("Cancelled before selecting a book.")
-            return
+            return False
 
         if selected == "all":
             choices = [BookChoice(title=title, index=index) for index, title in enumerate(book_names)]
             self.options.ocr_by_book.update(
                 {choice.index: self.options.ocr_enabled for choice in choices}
             )
-            self._save_books(choices, book_elements)
-            return
+            return self._save_books(choices, book_elements)
 
         if self.options.ocr_enabled:
             self.options.ocr_by_book.update(
@@ -77,43 +91,60 @@ class Digi2PDFSession:
             )
         if not selected:
             self.sink.warn("No books selected.")
-            return
-        self._save_books(selected, book_elements)
+            return False
+        return self._save_books(selected, book_elements)
 
     def _login(self) -> None:
         stored = None if self.options.forget_login else load_credentials()
-        email, password, remember = ask_credentials(stored)
-        if not email or not password:
-            raise RuntimeError("Email and password are required for login.")
+        while True:
+            email, password, remember = ask_credentials(stored)
+            if not email or not password:
+                action = ask_login_recovery("Email and password are required.")
+                if action == LOGIN_CLEAR:
+                    clear_credentials()
+                    stored = None
+                elif action in (LOGIN_DIFFERENT, LOGIN_CLEAR):
+                    stored = None
+                elif action == LOGIN_CANCEL:
+                    raise RuntimeError("Login cancelled.")
+                continue
 
-        self.sink.step("Submitting Digi4School login")
-        email_field = self.browser.find_element(By.XPATH, '//*[@id="ion-input-0"]')
-        password_field = self.browser.find_element(By.XPATH, '//*[@id="ion-input-1"]')
-        email_field.clear()
-        email_field.send_keys(email)
-        password_field.clear()
-        password_field.send_keys(password)
+            self.sink.step("Submitting Digi4School login")
+            email_field = self.browser.find_element(By.XPATH, '//*[@id="ion-input-0"]')
+            password_field = self.browser.find_element(By.XPATH, '//*[@id="ion-input-1"]')
+            email_field.clear()
+            email_field.send_keys(email)
+            password_field.clear()
+            password_field.send_keys(password)
 
-        shadow_host = self.browser.find_element(
-            By.XPATH,
-            '//*[@id="main-content"]/app-login/ion-content/div[1]/div/form/div[2]/ion-button[1]',
-        )
-        self.browser.execute_script(
-            "arguments[0].shadowRoot.querySelector('button[type=\"submit\"]').click();",
-            shadow_host,
-        )
-        sleep(self.options.delay_seconds + 1)
+            shadow_host = self.browser.find_element(
+                By.XPATH,
+                '//*[@id="main-content"]/app-login/ion-content/div[1]/div/form/div[2]/ion-button[1]',
+            )
+            self.browser.execute_script(
+                "arguments[0].shadowRoot.querySelector('button[type=\"submit\"]').click();",
+                shadow_host,
+            )
+            sleep(self.options.delay_seconds + 1)
 
-        if self._exists(By.XPATH, '//*[@id="ion-input-0"]'):
+            if not self._exists(By.XPATH, '//*[@id="ion-input-0"]'):
+                if remember:
+                    try:
+                        save_credentials(email, password)
+                        self.sink.step("Login saved securely in the system keychain")
+                    except Exception as error:
+                        self.sink.warn(f"Could not save login securely: {error}")
+                return
+
             self._dismiss_alert_buttons()
-            raise RuntimeError("Login failed. Check your Digi4School credentials.")
-
-        if remember:
-            try:
-                save_credentials(email, password)
-                self.sink.step("Login saved securely in the system keychain")
-            except Exception as error:
-                self.sink.warn(f"Could not save login securely: {error}")
+            action = ask_login_recovery("Login failed. Check your email/password or retry after fixing the browser page.")
+            if action == LOGIN_CLEAR:
+                clear_credentials()
+                stored = None
+            elif action == LOGIN_DIFFERENT:
+                stored = None
+            elif action == LOGIN_CANCEL:
+                raise RuntimeError("Login cancelled after failed attempt.")
 
     def _get_books(self) -> tuple[list[str], list[object]]:
         self.browser.execute_script("document.body.style.zoom='10%'")
@@ -253,10 +284,10 @@ class Digi2PDFSession:
 
     def _capture_book(self, title: str, book_type: BookType, crop_box: CropBox) -> None:
         book_dir = self._book_dir_for_title(title)
-        if book_dir.exists() and book_dir not in self._used_book_dirs and not self.options.keep_images:
-            shutil.rmtree(book_dir)
         self._used_book_dirs.add(book_dir)
         book_dir.mkdir(parents=True, exist_ok=True)
+        (book_dir / MANAGED_MARKER).write_text("managed by Digi2PDF\n", encoding="utf-8")
+        self._clean_managed_book_dir(book_dir)
 
         action = ActionChains(self.browser)
         self._nudge_mouse(action)
@@ -288,20 +319,7 @@ class Digi2PDFSession:
         pdf_path = book_dir / f"{book_dir.name}.pdf"
         save_images_as_pdf(page_paths, pdf_path)
         if self._ocr_enabled_for_title(title):
-            try:
-                self.sink.step("Adding OCR text layer")
-                apply_ocr(
-                    pdf_path,
-                    page_count=len(page_paths),
-                    profile=self.options.ocr_profile,
-                    jobs=recommended_ocr_jobs(),
-                    title=title,
-                    sink=self.sink,
-                )
-            except OcrUnavailableError as error:
-                raise RuntimeError(str(error)) from error
-            except RuntimeError as error:
-                raise RuntimeError(str(error)) from error
+            self._apply_ocr_with_recovery(title, pdf_path, page_count=len(page_paths))
         self.sink.finish_book(title, pdf_path)
 
         if not self.options.keep_images:
@@ -343,33 +361,83 @@ class Digi2PDFSession:
         else:
             raise RuntimeError(f"Cannot navigate unknown book type: {book_type.value}")
 
-    def _save_books(self, choices: list[BookChoice], book_elements: list[object]) -> None:
+    def _apply_ocr_with_recovery(self, title: str, pdf_path: Path, *, page_count: int) -> None:
+        while True:
+            try:
+                self.sink.step("Adding OCR text layer")
+                apply_ocr(
+                    pdf_path,
+                    page_count=page_count,
+                    profile=self.options.ocr_profile,
+                    jobs=recommended_ocr_jobs(),
+                    title=title,
+                    sink=self.sink,
+                )
+                return
+            except (OcrUnavailableError, RuntimeError) as error:
+                action = ask_ocr_failure_action(title, str(error))
+                if action == OCR_RETRY:
+                    continue
+                if action == OCR_KEEP_PDF:
+                    self.sink.warn(f"Saved {title} without OCR.")
+                    return
+                if action == OCR_FAIL:
+                    raise RuntimeError(str(error)) from error
+
+    def _save_books(self, choices: list[BookChoice], book_elements: list[object]) -> bool:
         ocr_by_title = {
             choice.title: self.options.ocr_by_book.get(choice.index, self.options.ocr_enabled)
             for choice in choices
         }
         self.sink.start_dashboard([choice.title for choice in choices], self.options, ocr_by_title)
         success_count = 0
+        failed: dict[int, str] = {}
+        pending = choices[:]
         try:
-            for choice in choices:
-                title = choice.title or f"book-{choice.index + 1}"
-                self.current_book_index = choice.index
-                self._open_book(BookChoice(title=title, index=choice.index), book_elements[choice.index])
-                try:
-                    self._save_current_book(title)
-                    success_count += 1
-                except Exception as error:
-                    self.sink.warn(f"Skipped {title}: {error}")
-                finally:
-                    if len(self.browser.window_handles) > 1:
-                        self.browser.close()
-                        self.browser.switch_to.window(self.browser.window_handles[0])
-                    sleep(self.options.delay_seconds)
+            while pending:
+                current_round = pending
+                pending = []
+                for choice in current_round:
+                    title = choice.title or f"book-{choice.index + 1}"
+                    self.current_book_index = choice.index
+                    self._open_book(BookChoice(title=title, index=choice.index), book_elements[choice.index])
+                    try:
+                        self._save_current_book(title)
+                        failed.pop(choice.index, None)
+                        success_count += 1
+                    except Exception as error:
+                        self._capture_failure_context(title)
+                        failed[choice.index] = str(error)
+                        self.sink.warn(f"Skipped {title}: {error}")
+                    finally:
+                        if len(self.browser.window_handles) > 1:
+                            self.browser.close()
+                            self.browser.switch_to.window(self.browser.window_handles[0])
+                        sleep(self.options.delay_seconds)
+                if failed:
+                    failed_titles = [
+                        choice.title or f"book-{choice.index + 1}"
+                        for choice in choices
+                        if choice.index in failed
+                    ]
+                    if ask_retry_failed_books(failed_titles):
+                        pending = [choice for choice in choices if choice.index in failed]
         finally:
             self.current_book_index = None
             self.sink.finish_dashboard()
         if success_count == 0:
             raise RuntimeError("No books were exported successfully.")
+        if failed:
+            details = "; ".join(
+                f"{choice.title or f'book-{choice.index + 1}'}: {failed[choice.index]}"
+                for choice in choices
+                if choice.index in failed
+            )
+            if self.options.allow_partial:
+                self.sink.warn(f"Finished with failed books: {details}")
+                return True
+            raise RuntimeError(f"Some books failed: {details}")
+        return True
 
     def _ocr_enabled_for_title(self, title: str) -> bool:
         if not self.options.ocr_enabled:
@@ -381,15 +449,41 @@ class Digi2PDFSession:
     def _book_dir_for_title(self, title: str) -> Path:
         base = safe_filename(title)
         candidate = self.options.output_dir / base
-        if candidate not in self._used_book_dirs:
+        if candidate not in self._used_book_dirs and self._can_use_book_dir(candidate):
             return candidate
 
         suffix = 2
         while True:
             candidate = self.options.output_dir / f"{base}-{suffix}"
-            if candidate not in self._used_book_dirs:
+            if candidate not in self._used_book_dirs and self._can_use_book_dir(candidate):
                 return candidate
             suffix += 1
+
+    @staticmethod
+    def _can_use_book_dir(candidate: Path) -> bool:
+        if not candidate.exists():
+            return True
+        return (candidate / MANAGED_MARKER).exists()
+
+    def _clean_managed_book_dir(self, book_dir: Path) -> None:
+        if self.options.keep_images or not (book_dir / MANAGED_MARKER).exists():
+            return
+        for page_path in book_dir.glob("*.png"):
+            page_path.unlink(missing_ok=True)
+        pdf_path = book_dir / f"{book_dir.name}.pdf"
+        pdf_path.unlink(missing_ok=True)
+        ocr_path = book_dir / f"{book_dir.name}.ocr.pdf"
+        ocr_path.unlink(missing_ok=True)
+
+    def _capture_failure_context(self, title: str) -> None:
+        diagnostics_dir = self.options.output_dir / "_diagnostics"
+        try:
+            diagnostics_dir.mkdir(parents=True, exist_ok=True)
+            screenshot_path = diagnostics_dir / f"{safe_filename(title)}-failure.png"
+            self.browser.save_screenshot(str(screenshot_path))
+            self.sink.warn(f"Saved failure screenshot: {screenshot_path}")
+        except Exception:
+            return
 
     def _calculate_bibox_crop_box(self, image_path: Path) -> CropBox:
         with Image.open(image_path) as image:

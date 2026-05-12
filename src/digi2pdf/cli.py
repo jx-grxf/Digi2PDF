@@ -34,6 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--delay", type=_delay_arg, default=None)
     parser.add_argument("--show-browser", action="store_true", help="Run Chrome visibly for debugging.")
     parser.add_argument("--all", action="store_true", help="Try converting every visible book.")
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Exit successfully when at least one selected book was exported.",
+    )
     parser.add_argument("--keep-images", action="store_true", help="Keep intermediate PNG page captures.")
     parser.add_argument("--ocr", action="store_true", help="Add a searchable OCR layer after export.")
     parser.add_argument("--no-ocr-prompt", action="store_true", help="Skip the interactive OCR question.")
@@ -70,9 +75,11 @@ def main(argv: list[str] | None = None) -> int:
         OCR_PROFILES,
         ask_confirm,
         ask_delay,
+        ask_first_run,
         ask_ocr_enabled,
         ask_ocr_profile,
         ask_output_dir,
+        ask_runtime_recovery,
     )
 
     args = build_parser().parse_args(argv)
@@ -80,9 +87,19 @@ def main(argv: list[str] | None = None) -> int:
     tui.animated_intro()
     tui.info_table()
 
+    if ask_first_run():
+        tui.tutorial()
+
     if args.forget_login:
         clear_credentials()
         tui.success("Saved Digi4School login cleared.")
+
+    if not ask_confirm(
+        "Private-use notice: only export books you may legally access and use offline. Continue?",
+        default=True,
+    ):
+        tui.warn("Cancelled before browser start.")
+        return 1
 
     delay = args.delay if args.delay is not None else ask_delay()
     output_dir = (
@@ -96,25 +113,21 @@ def main(argv: list[str] | None = None) -> int:
     if ocr_enabled and not args.no_ocr_prompt:
         ocr_profile = ask_ocr_profile(args.ocr_quality)
 
-    if not ask_confirm(
-        "Private-use notice: only export books you may legally access and use offline. Continue?",
-        default=True,
-    ):
-        tui.warn("Cancelled before browser start.")
-        return 1
+    while True:
+        with tui.busy("Checking dependencies"):
+            checks = run_preflight_checks(require_ocr=ocr_enabled)
+        for check in checks:
+            if check.ok:
+                tui.success(f"{check.name}: {check.detail}")
+            else:
+                tui.warn(f"{check.name}: {check.detail}")
+                if check.install_hint:
+                    tui.warn(f"{check.name} fix: {check.install_hint}")
 
-    with tui.busy("Checking dependencies"):
-        checks = run_preflight_checks(require_ocr=ocr_enabled)
-    for check in checks:
-        if check.ok:
-            tui.success(f"{check.name}: {check.detail}")
-        else:
-            tui.warn(f"{check.name}: {check.detail}")
-            if check.install_hint:
-                tui.warn(f"{check.name} fix: {check.install_hint}")
+        missing_checks = missing_required_checks(checks)
+        if not missing_checks:
+            break
 
-    missing_checks = missing_required_checks(checks)
-    if missing_checks:
         resolved, ocr_enabled = resolve_missing_dependencies(
             missing_checks,
             require_ocr=ocr_enabled,
@@ -122,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
             ask_confirm=ask_confirm,
         )
         if not resolved:
+            if ask_runtime_recovery("Dependency setup did not finish. What now?") == "retry":
+                continue
             return 1
 
         with tui.busy("Rechecking dependencies"):
@@ -134,15 +149,19 @@ def main(argv: list[str] | None = None) -> int:
             if ask_confirm("Restart Digi2PDF now to finish dependency setup?", default=True):
                 restart_current_process()
                 return 0
+            if ask_runtime_recovery("Dependencies are still missing. What now?") == "retry":
+                continue
             return 1
         for check in checks:
             tui.success(f"{check.name}: {check.detail}")
+        break
 
     options = RuntimeOptions(
         delay_seconds=delay,
         output_dir=output_dir,
         headless=not args.show_browser,
         all_books=args.all,
+        allow_partial=args.allow_partial,
         keep_images=args.keep_images,
         ocr_enabled=ocr_enabled,
         ocr_by_book={},
@@ -150,18 +169,22 @@ def main(argv: list[str] | None = None) -> int:
         forget_login=args.forget_login,
     )
 
-    try:
-        with tui.busy("Starting Chrome"):
-            browser = create_chrome_driver(
-                headless=options.headless,
-                chrome_binary=resolve_chrome_binary(),
-            )
-    except Exception as error:
-        tui.error(f"Could not start Chrome/Selenium: {error}")
-        return 1
+    browser = None
+    while browser is None:
+        try:
+            with tui.busy("Starting Chrome"):
+                browser = create_chrome_driver(
+                    headless=options.headless,
+                    chrome_binary=resolve_chrome_binary(),
+                )
+        except Exception as error:
+            tui.error(f"Could not start Chrome/Selenium: {error}")
+            tui.warn("Install or update Google Chrome, then retry. Set DIGI2PDF_CHROME_BINARY for a custom Chrome path.")
+            if ask_runtime_recovery("Chrome could not start. What now?") != "retry":
+                return 1
 
     try:
-        Digi2PDFSession(browser, options, tui).run()
+        completed = Digi2PDFSession(browser, options, tui).run()
     except KeyboardInterrupt:
         tui.warn("Interrupted by user.")
         return 130
@@ -170,6 +193,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     finally:
         browser.quit()
+
+    if not completed:
+        tui.warn("No export was started.")
+        return 1
 
     tui.success(f"Finished. Output folder: {output_dir}")
     return 0

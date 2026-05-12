@@ -4,12 +4,24 @@ build-backend = "hatchling.build"
 
 [project]
 name = "digi2pdf"
-version = "0.2.3"
+version = "0.3.0"
 description = "Professional cross-platform TUI for exporting owned Digi4School ebooks to PDF."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "Johannes Grof" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Education",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Education",
+]
 dependencies = [
   "keyring>=25.6.0",
   "numpy>=2.3.0",
@@ -23,6 +35,12 @@ dependencies = [
 
 [project.scripts]
 digi2pdf = "digi2pdf.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/jx-grxf/Digi2PDF"
+Repository = "https://github.com/jx-grxf/Digi2PDF"
+Issues = "https://github.com/jx-grxf/Digi2PDF/issues"
+Changelog = "https://github.com/jx-grxf/Digi2PDF/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

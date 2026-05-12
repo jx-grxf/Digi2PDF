@@ -54,13 +54,13 @@ class Tui:
         self._logs: list[tuple[str, str, str | None]] = []
 
     def hero(self) -> None:
-        title = Text("Digi2PDF", style=f"bold {THEME.accent}")
-        subtitle = Text("owned Digi4School ebooks -> clean PDFs", style=THEME.muted)
+        title = Text("Digi2PDF - Coded and opensourced by jx-grxf", style=f"bold {THEME.accent}")
+        subtitle = Text("Digi4School ebooks -> private offline PDFs", style=THEME.muted)
         self.console.print(Panel.fit(Text.assemble(title, "\n", subtitle), border_style=THEME.accent))
 
     def animated_intro(self) -> None:
-        title = "Digi2PDF"
-        subtitle = "owned Digi4School ebooks -> clean PDFs"
+        title = "Digi2PDF - Coded and opensourced by jx-grxf"
+        subtitle = "Digi4School ebooks -> private offline PDFs"
 
         def frame(title_text: str, subtitle_text: str = "") -> Panel:
             content = Text.assemble(
@@ -83,10 +83,21 @@ class Tui:
         table = Table(show_header=False, box=None, padding=(0, 1))
         table.add_column(style=THEME.muted)
         table.add_column(style=THEME.text)
-        table.add_row("platform", "macOS + Windows + Linux")
-        table.add_row("engine", "Python, Selenium, Pillow")
-        table.add_row("ui", "Terminal ui")
+        table.add_row("platforms", "macOS, Windows, Linux source install")
+        table.add_row("engine", "Chrome automation, Pillow PDF export, optional OCR")
+        table.add_row("controls", "Arrow keys, Space to select, Enter to continue")
         self.console.print(table)
+
+    def tutorial(self) -> None:
+        table = Table(show_header=True, header_style=f"bold {THEME.accent}", expand=True)
+        table.add_column("Step", style=THEME.muted, no_wrap=True)
+        table.add_column("What happens", style=THEME.text)
+        table.add_row("Login", "Use your own Digi4School account. Password input is masked and can be saved only after a successful login.")
+        table.add_row("Books", "Chrome opens the library, then you choose all books or selected books with Space and Enter.")
+        table.add_row("OCR", "OCR is optional. It makes the PDF searchable, but needs Tesseract and takes longer.")
+        table.add_row("Output", "Each book is exported into a managed folder in your chosen output directory.")
+        table.add_row("Legal", "Export only books you may access and use privately. Do not redistribute generated PDFs.")
+        self.console.print(Panel(table, title="First run guide", border_style=THEME.accent))
 
     def step(self, message: str) -> None:
         self._emit("●", message, THEME.accent)
@@ -219,11 +230,12 @@ class Tui:
             if eta is None
             else f"elapsed {_format_duration(elapsed)} • eta {_format_duration(eta)}"
         )
-        table.add_row("books", f"{done}/{total} done • {', '.join(self._dashboard_titles[:3])}{' ...' if total > 3 else ''}")
-        table.add_row("output", str(output_dir))
+        titles = _truncate(f"{', '.join(self._dashboard_titles[:3])}{' ...' if total > 3 else ''}", 64)
+        table.add_row("books", f"{done}/{total} done • {titles}")
+        table.add_row("output", _truncate(str(output_dir), 76))
         table.add_row("ocr", f"{profile} • {self._ocr_count()} selected")
         table.add_row("total", total_status)
-        return Panel(table, title="Digi2PDF job", border_style=THEME.accent)
+        return Panel(table, title="Export job", border_style=THEME.accent)
 
     def _render_current_book(self) -> Panel:
         title = self._current_book or "waiting"
@@ -233,7 +245,7 @@ class Tui:
         if self._current_book:
             pages = self._capture_pages.get(self._current_book, 0)
             ocr = self._ocr_progress.get(self._current_book)
-            table.add_row("book", self._current_book)
+            table.add_row("book", _truncate(self._current_book, 40))
             table.add_row("status", self._book_status.get(self._current_book, "running"))
             table.add_row("pages", str(pages))
             if not ocr and self._book_status.get(self._current_book) == "running":
@@ -245,7 +257,7 @@ class Tui:
                 table.add_row("ocr eta", _format_duration(eta))
         else:
             table.add_row("status", "waiting for book")
-        return Panel(table, title=title, border_style=THEME.border)
+        return Panel(table, title=_truncate(title, 32), border_style=THEME.border)
 
     def _render_logs(self) -> Panel:
         text = Text()
@@ -256,8 +268,8 @@ class Tui:
             text.append(symbol, style=style)
             text.append(" ")
             if prefix:
-                text.append(prefix, style=f"bold {style}")
-            text.append(message, style=THEME.text)
+                text.append(_truncate(prefix, 24), style=f"bold {style}")
+            text.append(_truncate(message, 96), style=THEME.text)
             text.append("\n")
         if not visible:
             text.append("Waiting for live output...", style=THEME.muted)
@@ -291,7 +303,7 @@ def _format_duration(seconds: float | None) -> str:
 
 def _bar(percent: int) -> str:
     filled = max(0, min(20, round(percent / 5)))
-    return f"{('#' * filled).ljust(20, '-')}"
+    return f"{('█' * filled).ljust(20, '░')}"
 
 
 def _book_style(title: str | None) -> str:
@@ -299,3 +311,11 @@ def _book_style(title: str | None) -> str:
         return THEME.text
     palette = [THEME.accent, THEME.success, THEME.warning, THEME.accent_soft, "#7DD3FC"]
     return palette[abs(hash(title)) % len(palette)]
+
+
+def _truncate(value: str, max_length: int) -> str:
+    if len(value) <= max_length:
+        return value
+    if max_length <= 1:
+        return value[:max_length]
+    return f"{value[: max_length - 1]}…"

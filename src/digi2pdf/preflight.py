@@ -36,7 +36,7 @@ PYTHON_DEPENDENCIES = {
 }
 
 
-OCR_CHECK_NAMES = {"Tesseract", "OCRmyPDF"}
+OCR_CHECK_NAMES = {"Tesseract", "OCRmyPDF", "OCR runtime"}
 OCR_SYSTEM_CHECK_NAMES = {"Tesseract"}
 
 
@@ -64,6 +64,7 @@ def run_preflight_checks(*, require_ocr: bool) -> list[PreflightCheck]:
         _chrome_check(),
     ]
     if require_ocr:
+        checks.append(_ocr_runtime_check())
         checks.append(_binary_check("Tesseract", "tesseract"))
     return checks
 
@@ -174,6 +175,25 @@ def _binary_check(label: str, binary_name: str) -> PreflightCheck:
     )
 
 
+def _ocr_runtime_check() -> PreflightCheck:
+    if importlib.util.find_spec("ocrmypdf") is None:
+        return PreflightCheck(
+            "OCR runtime",
+            False,
+            "OCRmyPDF Python runtime missing",
+            "Install OCRmyPDF or use the official Windows EXE bundle.",
+        )
+    has_pdf_backend = importlib.util.find_spec("pypdfium2") is not None or shutil.which("gs") is not None
+    if not has_pdf_backend:
+        return PreflightCheck(
+            "OCR runtime",
+            False,
+            "missing pypdfium2 or Ghostscript",
+            "Install pypdfium2 or Ghostscript so OCRmyPDF can read PDF pages.",
+        )
+    return PreflightCheck("OCR runtime", True, "OCRmyPDF ready")
+
+
 def _chrome_check() -> PreflightCheck:
     chrome_binary = resolve_chrome_binary()
     if chrome_binary is not None:
@@ -183,7 +203,7 @@ def _chrome_check() -> PreflightCheck:
         "Chrome",
         False,
         "missing",
-        "Install Google Chrome from https://www.google.com/chrome/ before starting Digi2PDF.",
+        _chrome_install_hint(),
     )
 
 
@@ -292,7 +312,25 @@ def _chrome_install_actions() -> list[InstallAction]:
                 ),
             )
         ]
+    if system == "Linux" and shutil.which("apt-get"):
+        return [
+            InstallAction(
+                "Install Chromium with apt",
+                ("sudo", "apt-get", "install", "-y", "chromium-browser"),
+            )
+        ]
     return []
+
+
+def _chrome_install_hint() -> str:
+    system = platform.system()
+    if system == "Darwin":
+        return "Install Google Chrome from https://www.google.com/chrome/ or with Homebrew."
+    if system == "Windows":
+        return "Install Google Chrome from https://www.google.com/chrome/ or with winget."
+    if system == "Linux":
+        return "Install Google Chrome or Chromium and make sure google-chrome/chromium is on PATH."
+    return "Install Google Chrome and make sure it is on PATH."
 
 
 def _ocr_install_actions(missing: set[str]) -> list[InstallAction]:
