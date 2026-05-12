@@ -194,8 +194,12 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         browser.quit()
 
+    if not completed:
+        tui.warn("No export was started.")
+        return 1
+
     tui.success(f"Finished. Output folder: {output_dir}")
-    return 0 if completed else 1
+    return 0
 
 
 def _delay_arg(value: str) -> float:

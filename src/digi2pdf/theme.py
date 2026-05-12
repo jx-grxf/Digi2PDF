@@ -54,12 +54,12 @@ class Tui:
         self._logs: list[tuple[str, str, str | None]] = []
 
     def hero(self) -> None:
-        title = Text("Digi2PDF", style=f"bold {THEME.accent}")
+        title = Text("Digi2PDF - Coded and opensourced by jx-grxf", style=f"bold {THEME.accent}")
         subtitle = Text("Digi4School ebooks -> private offline PDFs", style=THEME.muted)
         self.console.print(Panel.fit(Text.assemble(title, "\n", subtitle), border_style=THEME.accent))
 
     def animated_intro(self) -> None:
-        title = "Digi2PDF"
+        title = "Digi2PDF - Coded and opensourced by jx-grxf"
         subtitle = "Digi4School ebooks -> private offline PDFs"
 
         def frame(title_text: str, subtitle_text: str = "") -> Panel:

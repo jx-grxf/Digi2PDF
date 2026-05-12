@@ -105,16 +105,20 @@ def ask_books(book_names: list[str]) -> list[BookChoice] | str | None:
     choices: list[Choice] = [
         Choice(title=name, value=index) for index, name in enumerate(book_names)
     ]
-    selected = questionary.checkbox(
-        "Choose ebooks with Space, then press Enter",
-        choices=choices,
-        use_search_filter=True,
-        use_jk_keys=False,
-        style=_style(),
-    ).ask()
-    if selected is None:
-        return None
-    return [BookChoice(title=book_names[int(index)], index=int(index)) for index in selected]
+    while True:
+        selected = questionary.checkbox(
+            "Choose ebooks with Space, then press Enter",
+            choices=choices,
+            use_search_filter=True,
+            use_jk_keys=False,
+            style=_style(),
+        ).ask()
+        if selected is None:
+            return None
+        if selected:
+            return [BookChoice(title=book_names[int(index)], index=int(index)) for index in selected]
+        if not ask_confirm("No books selected. Choose books now?", default=True):
+            return None
 
 
 def ask_sub_book(book_names: list[str]) -> BookChoice | None:

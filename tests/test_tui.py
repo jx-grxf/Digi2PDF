@@ -43,3 +43,31 @@ def test_ask_books_manual_selection_uses_prefix_search_without_jk_keys(monkeypat
     assert [choice.value for choice in captured_choices] == [0, 1]
     assert captured_kwargs["use_search_filter"] is True
     assert captured_kwargs["use_jk_keys"] is False
+
+
+def test_ask_books_retries_empty_manual_selection(monkeypatch) -> None:
+    calls = 0
+    monkeypatch.setattr(tui, "ask_book_scope", lambda: "select")
+    monkeypatch.setattr(tui, "ask_confirm", lambda _message, default=True: True)
+
+    def fake_checkbox(_message: str, *, choices: list[object], **_kwargs: object) -> SimpleNamespace:
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(ask=lambda: [] if calls == 1 else [0])
+
+    monkeypatch.setattr(tui.questionary, "checkbox", fake_checkbox)
+
+    assert tui.ask_books(["Math"]) == [tui.BookChoice(title="Math", index=0)]
+    assert calls == 2
+
+
+def test_ask_books_can_cancel_after_empty_manual_selection(monkeypatch) -> None:
+    monkeypatch.setattr(tui, "ask_book_scope", lambda: "select")
+    monkeypatch.setattr(tui, "ask_confirm", lambda _message, default=True: False)
+    monkeypatch.setattr(
+        tui.questionary,
+        "checkbox",
+        lambda *_args, **_kwargs: SimpleNamespace(ask=lambda: []),
+    )
+
+    assert tui.ask_books(["Math"]) is None
