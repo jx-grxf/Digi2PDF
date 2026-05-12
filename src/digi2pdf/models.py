@@ -57,6 +57,7 @@ class RuntimeOptions:
     ocr_by_book: dict[int, bool]
     ocr_profile: OcrProfile
     forget_login: bool
+    worker_setting: str | None = None
 
 
 class ProgressSink(Protocol):
@@ -73,6 +74,8 @@ class ProgressSink(Protocol):
     def finish_dashboard(self) -> None: ...
 
     def start_book(self, title: str) -> None: ...
+
+    def fail_book(self, title: str, detail: str) -> None: ...
 
     def finish_book(self, title: str, pdf_path: Path) -> None: ...
 

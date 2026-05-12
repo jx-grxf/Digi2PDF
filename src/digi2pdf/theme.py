@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 
 from rich.console import Console
 from rich.layout import Layout
@@ -42,6 +43,7 @@ SPINNER_FRAMES = ("●○○", "○●○", "○○●", "○●○")
 class Tui:
     def __init__(self) -> None:
         self.console = Console()
+        self._lock = RLock()
         self._live: Live | None = None
         self._dashboard_titles: list[str] = []
         self._dashboard_options: object | None = None
@@ -112,48 +114,63 @@ class Tui:
         self._emit("✓", message, THEME.success)
 
     def start_dashboard(self, titles: list[str], options: object, ocr_by_title: dict[str, bool]) -> None:
-        self._dashboard_titles = titles
-        self._dashboard_options = options
-        self._dashboard_ocr = ocr_by_title
-        self._book_status = dict.fromkeys(titles, "queued")
-        self._started_at = time.monotonic()
-        self._logs.clear()
-        self._live = Live(
-            self._render_dashboard(),
-            console=self.console,
-            refresh_per_second=8,
-            transient=False,
-            screen=False,
-        )
-        self._live.start()
+        with self._lock:
+            self._dashboard_titles = titles
+            self._dashboard_options = options
+            self._dashboard_ocr = ocr_by_title
+            self._book_status = dict.fromkeys(titles, "queued")
+            self._capture_pages.clear()
+            self._ocr_progress.clear()
+            self._started_at = time.monotonic()
+            self._current_book = None
+            self._logs.clear()
+            self._live = Live(
+                self._render_dashboard(),
+                console=self.console,
+                refresh_per_second=8,
+                transient=False,
+                screen=False,
+            )
+            self._live.start()
 
     def finish_dashboard(self) -> None:
-        if self._live is not None:
-            self._refresh_dashboard()
-            self._live.stop()
-            self._live = None
+        with self._lock:
+            if self._live is not None:
+                self._refresh_dashboard()
+                self._live.stop()
+                self._live = None
 
     def start_book(self, title: str) -> None:
-        self._current_book = title
-        self._book_status[title] = "running"
-        self._refresh_dashboard()
+        with self._lock:
+            self._current_book = title
+            self._book_status[title] = "running"
+            self._refresh_dashboard()
 
     def finish_book(self, title: str, pdf_path: Path) -> None:
-        self._book_status[title] = "done"
-        self._emit("✓", f"PDF written: {pdf_path}", THEME.success, title)
-        self._refresh_dashboard()
+        with self._lock:
+            self._book_status[title] = "done"
+            self._emit("✓", f"PDF written: {pdf_path}", THEME.success, title)
+            self._refresh_dashboard()
+
+    def fail_book(self, title: str, detail: str) -> None:
+        with self._lock:
+            self._book_status[title] = "failed"
+            self._emit("▲", f"Skipped: {detail}", THEME.warning, title)
+            self._refresh_dashboard()
 
     def capture_progress(self, title: str, page: int) -> None:
-        self._capture_pages[title] = page
-        self._emit("●", f"Captured page {page}", THEME.accent, title)
-        self._refresh_dashboard()
+        with self._lock:
+            self._capture_pages[title] = page
+            self._emit("●", f"Captured page {page}", THEME.accent, title)
+            self._refresh_dashboard()
 
     def ocr_progress(
         self, title: str, completed: int, total: int, eta_seconds: float | None
     ) -> None:
-        self._ocr_progress[title] = (completed, total, eta_seconds)
-        self._book_status[title] = "ocr"
-        self._refresh_dashboard()
+        with self._lock:
+            self._ocr_progress[title] = (completed, total, eta_seconds)
+            self._book_status[title] = "ocr"
+            self._refresh_dashboard()
 
     @contextmanager
     def busy(self, message: str) -> Iterator[None]:
@@ -190,12 +207,13 @@ class Tui:
         return Live(render(), console=self.console, refresh_per_second=8, transient=True)
 
     def _emit(self, symbol: str, message: str, style: str, title: str | None = None) -> None:
-        if self._live is None:
-            self.console.print(f"[{style}]{symbol}[/] {message}")
-            return
-        self._logs.append((symbol, message, title))
-        self._logs = self._logs[-80:]
-        self._refresh_dashboard()
+        with self._lock:
+            if self._live is None:
+                self.console.print(f"[{style}]{symbol}[/] {message}")
+                return
+            self._logs.append((symbol, message, title))
+            self._logs = self._logs[-80:]
+            self._refresh_dashboard()
 
     def _refresh_dashboard(self) -> None:
         if self._live is not None:
@@ -238,6 +256,9 @@ class Tui:
         return Panel(table, title="Export job", border_style=THEME.accent)
 
     def _render_current_book(self) -> Panel:
+        if len(self._dashboard_titles) > 1:
+            return self._render_book_statuses()
+
         title = self._current_book or "waiting"
         table = Table(show_header=False, box=None, expand=True)
         table.add_column(style=THEME.muted)
@@ -258,6 +279,25 @@ class Tui:
         else:
             table.add_row("status", "waiting for book")
         return Panel(table, title=_truncate(title, 32), border_style=THEME.border)
+
+    def _render_book_statuses(self) -> Panel:
+        table = Table(show_header=True, header_style=f"bold {THEME.accent}", expand=True)
+        table.add_column("Book", style=THEME.text)
+        table.add_column("Status", style=THEME.muted, no_wrap=True)
+        table.add_column("Pages", justify="right", no_wrap=True)
+        for title in self._dashboard_titles[:12]:
+            status = self._book_status.get(title, "queued")
+            pages = self._capture_pages.get(title, 0)
+            style = _book_style(title)
+            table.add_row(
+                _truncate(title, 24),
+                status,
+                str(pages) if pages else "-",
+                style=style if status in {"running", "ocr"} else None,
+            )
+        if len(self._dashboard_titles) > 12:
+            table.add_row("...", f"{len(self._dashboard_titles) - 12} more", "-")
+        return Panel(table, title="books", border_style=THEME.border)
 
     def _render_logs(self) -> Panel:
         text = Text()

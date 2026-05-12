@@ -40,6 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Exit successfully when at least one selected book was exported.",
     )
     parser.add_argument("--keep-images", action="store_true", help="Keep intermediate PNG page captures.")
+    parser.add_argument(
+        "--workers",
+        default=None,
+        help="Parallel Chrome sessions: auto or a number. Omit to choose in the TUI.",
+    )
     parser.add_argument("--ocr", action="store_true", help="Add a searchable OCR layer after export.")
     parser.add_argument("--no-ocr-prompt", action="store_true", help="Skip the interactive OCR question.")
     parser.add_argument(
@@ -167,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         ocr_by_book={},
         ocr_profile=ocr_profile,
         forget_login=args.forget_login,
+        worker_setting=args.workers,
     )
 
     browser = None

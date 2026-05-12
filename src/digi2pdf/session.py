@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from pathlib import Path
+from threading import Lock
 from time import sleep
 
 import numpy as np
@@ -17,6 +21,8 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
+from digi2pdf.browser import create_chrome_driver
+from digi2pdf.concurrency import parse_manual_worker_count, recommend_workers
 from digi2pdf.credentials import clear_credentials, load_credentials, save_credentials
 from digi2pdf.imaging import (
     crop_image,
@@ -41,6 +47,7 @@ from digi2pdf.tui import (
     ask_ocr_failure_action,
     ask_retry_failed_books,
     ask_sub_book,
+    ask_worker_count,
 )
 
 MANAGED_MARKER = ".digi2pdf-export"
@@ -55,6 +62,7 @@ class Digi2PDFSession:
         self.current_book_index: int | None = None
         self._page_change_attempts = 8
         self._used_book_dirs: set[Path] = set()
+        self._directory_lock = Lock()
 
     def run(self) -> bool:
         self.sink.step("Opening Digi4School overview")
@@ -284,7 +292,6 @@ class Digi2PDFSession:
 
     def _capture_book(self, title: str, book_type: BookType, crop_box: CropBox) -> None:
         book_dir = self._book_dir_for_title(title)
-        self._used_book_dirs.add(book_dir)
         book_dir.mkdir(parents=True, exist_ok=True)
         (book_dir / MANAGED_MARKER).write_text("managed by Digi2PDF\n", encoding="utf-8")
         self._clean_managed_book_dir(book_dir)
@@ -389,7 +396,13 @@ class Digi2PDFSession:
             choice.title: self.options.ocr_by_book.get(choice.index, self.options.ocr_enabled)
             for choice in choices
         }
+        worker_count = self._resolve_worker_count(len(choices))
         self.sink.start_dashboard([choice.title for choice in choices], self.options, ocr_by_title)
+        self.sink.step(
+            "Processing one book at a time."
+            if worker_count == 1
+            else f"Processing up to {worker_count} books in parallel."
+        )
         success_count = 0
         failed: dict[int, str] = {}
         pending = choices[:]
@@ -397,23 +410,12 @@ class Digi2PDFSession:
             while pending:
                 current_round = pending
                 pending = []
-                for choice in current_round:
-                    title = choice.title or f"book-{choice.index + 1}"
-                    self.current_book_index = choice.index
-                    self._open_book(BookChoice(title=title, index=choice.index), book_elements[choice.index])
-                    try:
-                        self._save_current_book(title)
-                        failed.pop(choice.index, None)
-                        success_count += 1
-                    except Exception as error:
-                        self._capture_failure_context(title)
-                        failed[choice.index] = str(error)
-                        self.sink.warn(f"Skipped {title}: {error}")
-                    finally:
-                        if len(self.browser.window_handles) > 1:
-                            self.browser.close()
-                            self.browser.switch_to.window(self.browser.window_handles[0])
-                        sleep(self.options.delay_seconds)
+                if worker_count == 1:
+                    round_success = self._save_books_serial(current_round, book_elements, failed)
+                else:
+                    round_success = self._save_books_parallel(current_round, failed, worker_count)
+                success_count += round_success
+
                 if failed:
                     failed_titles = [
                         choice.title or f"book-{choice.index + 1}"
@@ -439,6 +441,187 @@ class Digi2PDFSession:
             raise RuntimeError(f"Some books failed: {details}")
         return True
 
+    def _save_books_serial(
+        self,
+        choices: list[BookChoice],
+        book_elements: list[object],
+        failed: dict[int, str],
+    ) -> int:
+        success_count = 0
+        for choice in choices:
+            title = choice.title or f"book-{choice.index + 1}"
+            self.current_book_index = choice.index
+            self._open_book(BookChoice(title=title, index=choice.index), book_elements[choice.index])
+            try:
+                self._save_current_book(title)
+                failed.pop(choice.index, None)
+                success_count += 1
+            except Exception as error:
+                self._capture_failure_context(title)
+                failed[choice.index] = str(error)
+                self._mark_book_failed(title, str(error))
+            finally:
+                if len(self.browser.window_handles) > 1:
+                    self.browser.close()
+                    self.browser.switch_to.window(self.browser.window_handles[0])
+                sleep(self.options.delay_seconds)
+        return success_count
+
+    def _save_books_parallel(
+        self,
+        choices: list[BookChoice],
+        failed: dict[int, str],
+        worker_count: int,
+    ) -> int:
+        cookies = self.browser.get_cookies()
+        success_count = 0
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="digi2pdf-book") as executor:
+            futures = {
+                executor.submit(self._save_book_with_new_browser, choice, cookies): choice
+                for choice in choices
+            }
+            for future in as_completed(futures):
+                choice = futures[future]
+                try:
+                    future.result()
+                    failed.pop(choice.index, None)
+                    success_count += 1
+                except Exception as error:
+                    failed[choice.index] = str(error)
+                    self._mark_book_failed(choice.title, str(error))
+        return success_count
+
+    def _save_book_with_new_browser(
+        self,
+        choice: BookChoice,
+        cookies: list[dict[str, object]],
+    ) -> None:
+        from digi2pdf.preflight import resolve_chrome_binary
+
+        title = choice.title or f"book-{choice.index + 1}"
+        with tempfile.TemporaryDirectory(prefix="digi2pdf-chrome-") as profile_dir:
+            browser = create_chrome_driver(
+                headless=self.options.headless,
+                chrome_binary=resolve_chrome_binary(),
+                user_data_dir=Path(profile_dir),
+            )
+            worker = Digi2PDFSession(
+                browser,
+                replace(self.options, worker_setting="1"),
+                self.sink,
+            )
+            worker._used_book_dirs = self._used_book_dirs
+            worker._directory_lock = self._directory_lock
+            try:
+                worker._open_overview_with_session(cookies)
+                book_names, book_elements = worker._get_books()
+                worker_index = worker._find_worker_book_index(choice, book_names)
+                worker.current_book_index = choice.index
+                worker._open_book(
+                    BookChoice(title=title, index=worker_index),
+                    book_elements[worker_index],
+                )
+                worker._save_current_book(title)
+            except Exception:
+                worker._capture_failure_context(title)
+                raise
+            finally:
+                browser.quit()
+
+    def _open_overview_with_session(self, cookies: list[dict[str, object]]) -> None:
+        self.browser.get("https://digi4school.at")
+        for cookie in cookies:
+            clean_cookie = {
+                key: value
+                for key, value in cookie.items()
+                if key
+                in {
+                    "name",
+                    "value",
+                    "path",
+                    "domain",
+                    "secure",
+                    "httpOnly",
+                    "expiry",
+                    "sameSite",
+                }
+            }
+            try:
+                self.browser.add_cookie(clean_cookie)
+            except Exception:
+                continue
+
+        self.browser.get("https://digi4school.at/overview")
+        self.wait.until(
+            EC.any_of(
+                EC.visibility_of_element_located((By.XPATH, '//*[@id="ion-input-0"]')),
+                EC.visibility_of_element_located((By.CLASS_NAME, "entry-heading")),
+            )
+        )
+        if self._exists(By.ID, "ion-input-0") and not self._login_with_stored_credentials():
+            raise RuntimeError(
+                "Parallel export needs a reusable Digi4School session or saved login. "
+                "Run Digi2PDF once, save the login, then retry multiple sessions."
+            )
+
+    def _login_with_stored_credentials(self) -> bool:
+        stored = None if self.options.forget_login else load_credentials()
+        if stored is None:
+            return False
+
+        self.sink.step("Submitting saved Digi4School login")
+        email_field = self.browser.find_element(By.XPATH, '//*[@id="ion-input-0"]')
+        password_field = self.browser.find_element(By.XPATH, '//*[@id="ion-input-1"]')
+        email_field.clear()
+        email_field.send_keys(stored.email)
+        password_field.clear()
+        password_field.send_keys(stored.password)
+
+        shadow_host = self.browser.find_element(
+            By.XPATH,
+            '//*[@id="main-content"]/app-login/ion-content/div[1]/div/form/div[2]/ion-button[1]',
+        )
+        self.browser.execute_script(
+            "arguments[0].shadowRoot.querySelector('button[type=\"submit\"]').click();",
+            shadow_host,
+        )
+        sleep(self.options.delay_seconds + 1)
+        if not self._exists(By.XPATH, '//*[@id="ion-input-0"]'):
+            return True
+        self._dismiss_alert_buttons()
+        return False
+
+    @staticmethod
+    def _find_worker_book_index(choice: BookChoice, book_names: list[str]) -> int:
+        if choice.index < len(book_names) and book_names[choice.index] == choice.title:
+            return choice.index
+        for index, name in enumerate(book_names):
+            if name == choice.title:
+                return index
+        raise RuntimeError(f"Could not find selected book in worker browser: {choice.title}")
+
+    def _resolve_worker_count(self, selected_count: int) -> int:
+        if selected_count <= 1:
+            return 1
+        recommendation = recommend_workers(selected_count)
+        setting = self.options.worker_setting
+        if setting is None:
+            workers = ask_worker_count(selected_count, recommendation)
+        elif setting == "auto":
+            workers = recommendation.recommended_workers
+        else:
+            workers = parse_manual_worker_count(setting, selected_books=selected_count)
+
+        self.sink.step(recommendation.summary)
+        return workers
+
+    def _mark_book_failed(self, title: str, detail: str) -> None:
+        fail_book = getattr(self.sink, "fail_book", None)
+        if callable(fail_book):
+            fail_book(title, detail)
+        else:
+            self.sink.warn(f"Skipped {title}: {detail}")
+
     def _ocr_enabled_for_title(self, title: str) -> bool:
         if not self.options.ocr_enabled:
             return False
@@ -447,15 +630,24 @@ class Digi2PDFSession:
         return self.options.ocr_by_book.get(self.current_book_index, self.options.ocr_enabled)
 
     def _book_dir_for_title(self, title: str) -> Path:
+        lock = getattr(self, "_directory_lock", None)
+        if lock is None:
+            return self._book_dir_for_title_unlocked(title)
+        with lock:
+            return self._book_dir_for_title_unlocked(title)
+
+    def _book_dir_for_title_unlocked(self, title: str) -> Path:
         base = safe_filename(title)
         candidate = self.options.output_dir / base
         if candidate not in self._used_book_dirs and self._can_use_book_dir(candidate):
+            self._used_book_dirs.add(candidate)
             return candidate
 
         suffix = 2
         while True:
             candidate = self.options.output_dir / f"{base}-{suffix}"
             if candidate not in self._used_book_dirs and self._can_use_book_dir(candidate):
+                self._used_book_dirs.add(candidate)
                 return candidate
             suffix += 1
 

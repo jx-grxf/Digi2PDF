@@ -16,7 +16,13 @@ class NullSink:
     def finish_dashboard(self) -> None:
         return
 
+    def step(self, _message: str) -> None:
+        return
+
     def warn(self, _message: str) -> None:
+        return
+
+    def fail_book(self, _title: str, _detail: str) -> None:
         return
 
 
@@ -32,6 +38,7 @@ def _options(tmp_path: Path) -> RuntimeOptions:
         ocr_by_book={},
         ocr_profile=OcrProfile("balanced", "Balanced", 2, 1.4),
         forget_login=False,
+        worker_setting="1",
     )
 
 
