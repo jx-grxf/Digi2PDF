@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import getpass
 from pathlib import Path
 
 import questionary
@@ -15,6 +14,18 @@ OCR_PROFILES = {
     "balanced": OcrProfile("balanced", "Balanced - recommended", 2, 1.4),
     "best": OcrProfile("best", "Best - strongest optimization, slowest", 3, 2.2),
 }
+
+LOGIN_RETRY = "retry"
+LOGIN_DIFFERENT = "different"
+LOGIN_CLEAR = "clear"
+LOGIN_CANCEL = "cancel"
+
+RUNTIME_RETRY = "retry"
+RUNTIME_CANCEL = "cancel"
+
+OCR_RETRY = "retry"
+OCR_KEEP_PDF = "keep_pdf"
+OCR_FAIL = "fail"
 
 
 def ask_delay(default: float = 0.5) -> float:
@@ -49,38 +60,59 @@ def ask_credentials(stored: StoredCredentials | None = None) -> tuple[str, str, 
 
     email_default = stored.email if stored else ""
     email = questionary.text("Digi4School email", default=email_default, style=_style()).ask()
-    password = getpass.getpass("Digi4School password: ")
+    password = ask_password()
     remember = ask_confirm("Save login securely in the system keychain?", default=True)
     return (email or "").strip(), password, remember
 
 
-def ask_book(book_names: list[str]) -> BookChoice | str | None:
-    choices: list[Choice] = [Choice(title="Convert all books", value="all")]
-    choices.extend(Choice(title=name, value=index) for index, name in enumerate(book_names))
+def ask_password() -> str:
+    password = questionary.password(
+        "Digi4School password",
+        qmark="*",
+        style=_style(),
+    ).ask()
+    return password or ""
+
+
+def ask_first_run() -> bool:
+    return not ask_confirm("Have you used Digi2PDF before?", default=True)
+
+
+def ask_book_scope() -> str | None:
     selected = questionary.select(
-        "Choose ebook",
-        choices=choices,
+        "What should Digi2PDF export?",
+        choices=[
+            Choice(title="All visible books", value="all"),
+            Choice(title="Choose books manually", value="select"),
+            Choice(title="Cancel", value="cancel"),
+        ],
         use_indicator=True,
         use_shortcuts=False,
         style=_style(),
     ).ask()
-    if selected is None or selected == "all":
-        return selected
-    return BookChoice(title=book_names[int(selected)], index=int(selected))
+    if selected in (None, "cancel"):
+        return None
+    return str(selected)
 
 
 def ask_books(book_names: list[str]) -> list[BookChoice] | str | None:
-    choices: list[Choice] = [Choice(title="Convert all books", value="all")]
-    choices.extend(Choice(title=name, value=index) for index, name in enumerate(book_names))
+    scope = ask_book_scope()
+    if scope is None:
+        return None
+    if scope == "all":
+        return "all"
+
+    choices: list[Choice] = [
+        Choice(title=name, value=index) for index, name in enumerate(book_names)
+    ]
     selected = questionary.checkbox(
         "Choose ebooks with Space, then press Enter",
         choices=choices,
+        use_search_filter=True,
         style=_style(),
     ).ask()
     if selected is None:
         return None
-    if "all" in selected:
-        return "all"
     return [BookChoice(title=book_names[int(index)], index=int(index)) for index in selected]
 
 
@@ -99,6 +131,51 @@ def ask_sub_book(book_names: list[str]) -> BookChoice | None:
 
 def ask_confirm(message: str, *, default: bool = True) -> bool:
     return bool(questionary.confirm(message, default=default, style=_style()).ask())
+
+
+def ask_login_recovery(message: str) -> str:
+    return _select_action(
+        message,
+        [
+            Choice(title="Try again", value=LOGIN_RETRY),
+            Choice(title="Use a different email/password", value=LOGIN_DIFFERENT),
+            Choice(title="Clear saved login and enter it again", value=LOGIN_CLEAR),
+            Choice(title="Cancel", value=LOGIN_CANCEL),
+        ],
+        default=LOGIN_RETRY,
+    )
+
+
+def ask_runtime_recovery(message: str) -> str:
+    return _select_action(
+        message,
+        [
+            Choice(title="Try again", value=RUNTIME_RETRY),
+            Choice(title="Cancel", value=RUNTIME_CANCEL),
+        ],
+        default=RUNTIME_RETRY,
+    )
+
+
+def ask_ocr_failure_action(title: str, detail: str) -> str:
+    return _select_action(
+        f"OCR failed for {title}: {detail}",
+        [
+            Choice(title="Retry OCR", value=OCR_RETRY),
+            Choice(title="Save the PDF without OCR", value=OCR_KEEP_PDF),
+            Choice(title="Mark this book as failed", value=OCR_FAIL),
+        ],
+        default=OCR_RETRY,
+    )
+
+
+def ask_retry_failed_books(failed_titles: list[str]) -> bool:
+    if not failed_titles:
+        return False
+    preview = ", ".join(failed_titles[:3])
+    if len(failed_titles) > 3:
+        preview = f"{preview}, ..."
+    return ask_confirm(f"Retry failed books now? ({preview})", default=True)
 
 
 def ask_ocr_enabled(default: bool = False) -> bool:
@@ -134,6 +211,18 @@ def ask_ocr_by_book(selected: list[BookChoice], *, default: bool) -> dict[int, b
     ).ask()
     enabled_set = set(enabled or [])
     return {choice.index: choice.index in enabled_set for choice in selected}
+
+
+def _select_action(message: str, choices: list[Choice], *, default: str) -> str:
+    selected = questionary.select(
+        message,
+        choices=choices,
+        default=default,
+        use_indicator=True,
+        use_shortcuts=False,
+        style=_style(),
+    ).ask()
+    return str(selected or default)
 
 
 def _style() -> questionary.Style:

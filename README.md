@@ -2,7 +2,7 @@
 
 # Digi2PDF
 
-Are you also sick of using this stupid Digi4... web editor and finally want to have a clean and searchable PDF of the books you paid for? 
+A cross-platform terminal app for exporting personally accessible Digi4School ebooks into private offline PDFs.
 
 ![Python](https://img.shields.io/badge/python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Selenium](https://img.shields.io/badge/selenium-browser_automation-43B02A?style=for-the-badge&logo=selenium&logoColor=white)
@@ -16,15 +16,15 @@ Are you also sick of using this stupid Digi4... web editor and finally want to h
 ```text
 ╭────────────────────────────────────────╮
 │ Digi2PDF                               │
-│ owned Digi4School ebooks -> clean PDFs │
+│ Digi4School ebooks -> private PDFs     │
 ╰────────────────────────────────────────╯
-platform macOS + Windows
-engine Python, Selenium, Pillow
-Terminal ui
+platforms macOS, Windows, Linux source install
+engine Chrome automation, Pillow PDF export, optional OCR
+controls Arrow keys, Space to select, Enter to continue
 
 ✓ Chrome: /Applications/Google Chrome.app
 ✓ Tesseract: /opt/homebrew/bin/tesseract
-● Live dashboard: selected books, capture phase, OCR progress, and scrollable logs
+● Live dashboard: selected books, capture phase, OCR progress, and recent logs
 ✓ Finished. Output folder: ~/Documents/Digi2PDF
 ```
 
@@ -49,15 +49,15 @@ Terminal ui
 
 | Feature | Description |
 | --- | --- |
-| Polished TUI | Fast terminal UI flow with strong contrast, status states, and arrow-key selections. |
-| Multi-book picker | Select one or many books with Space and start the batch with Enter. |
-| Live dashboard | Shows selected books, output path, capture phase, OCR decisions, per-book OCR progress, and scrollable colored logs. |
-| Cross-platform | Designed for macOS and Windows with Chrome + Selenium. |
-| Secure login storage | Can store Digi4.... credentials in the OS keychain or Windows Credential Manager. |
+| Guided TUI | First-run tutorial, legal/private-use checkpoint, recoverable errors, and arrow-key selections. |
+| Multi-book picker | Choose all visible books or manually select books with Space and Enter. |
+| Live dashboard | Shows selected books, output path, capture phase, OCR decisions, per-book OCR progress, and recent colored logs. |
+| Cross-platform | Designed for macOS and Windows, with Linux supported through source installs and system Chrome/Chromium. |
+| Secure login storage | Can store Digi4School credentials in the OS keychain or Windows Credential Manager after a successful login. |
 | Export location picker | Defaults to `~/Documents/Digi2PDF` on macOS and still lets you override the folder. |
 | Optional OCR | Can run a searchable OCR post-process with fast, balanced, and best profiles when OCRmyPDF and Tesseract are available. |
 | PDF pipeline | Captures stable pages, crops the book canvas, waits for page changes, removes the duplicate final page, and writes a PDF. |
-| Provider handling | Supports Digi4....-style readers plus Scook and BiBox preparation paths. |
+| Provider handling | Digi4School readers are the main target; Scook and BiBox preparation paths are included but should be treated as experimental until covered by stronger fixtures. |
 | Clean architecture | Browser automation, TUI, image handling, and runtime options are split into maintainable modules. |
 
 ## Why This Exists
@@ -69,13 +69,14 @@ Use it only for books you are allowed to access and export under your account, s
 ## Current Workflow
 
 1. Start the TUI.
-2. Confirm the private-use notice.
-3. Choose timing/output/OCR options.
-4. Digi2PDF checks the operating system, Python dependencies, Chrome, and OCR tooling when OCR is enabled.
-5. Log in to Digi4School in the Selenium-controlled Chrome session.
-6. Select one or many books with Space and Enter.
-7. Choose which selected books should receive OCR.
-8. Digi2PDF detects the viewer type, captures stable page images, waits for page changes, writes a PDF, optionally adds OCR, and removes intermediate page images unless `--keep-images` is set.
+2. If this is your first run, read the short tutorial for login, books, OCR, output folders, Chrome, and legal/private-use boundaries.
+3. Confirm the private-use notice.
+4. Choose timing, output, and OCR options.
+5. Digi2PDF checks the operating system, Python dependencies, Chrome, and OCR tooling when OCR is enabled.
+6. Log in to Digi4School in the Selenium-controlled Chrome session. Wrong credentials can be retried without restarting the app.
+7. Choose all visible books or manually select books with Space and Enter.
+8. Choose which selected books should receive OCR.
+9. Digi2PDF detects the viewer type, captures stable page images, writes a PDF, optionally adds OCR, and removes intermediate page images unless `--keep-images` is set.
 
 ## Tech Stack
 
@@ -95,6 +96,7 @@ Use it only for books you are allowed to access and export under your account, s
 - `uv` for the recommended CLI installation and local development
 - No Python or `uv` installation is needed when using the Windows release EXE
 - Optional OCR: Tesseract. The Windows release EXE bundles the OCRmyPDF Python runtime; normal Python installs receive it as a package dependency.
+- Linux is supported through source installs. Install Chrome/Chromium and Tesseract with your system package manager when needed.
 
 ## Quick Start
 
@@ -108,10 +110,10 @@ digi2pdf
 Windows users can either use the same CLI install or download the latest `digi2pdf-*-windows-x64.exe` release asset:
 
 ```powershell
-.\digi2pdf-v0.0.0-windows-x64.exe
+.\digi2pdf-v0.2.3-windows-x64.exe
 ```
 
-The EXE bundles the required Python packages. Google Chrome still needs to be installed separately because Selenium controls the real browser.
+The EXE bundles the required Python packages. Google Chrome still needs to be installed separately because Selenium controls the real browser. If OCR is enabled, Digi2PDF checks Tesseract and offers install/recheck/restart guidance.
 
 If you prefer the Python CLI:
 
@@ -133,6 +135,7 @@ uv run digi2pdf
 uv run digi2pdf --output-dir ./exports
 uv run digi2pdf --show-browser --delay 1.0
 uv run digi2pdf --all --keep-images
+uv run digi2pdf --all --allow-partial
 uv run digi2pdf --ocr
 uv run digi2pdf --ocr --ocr-quality fast
 uv run digi2pdf --forget-login
@@ -145,9 +148,11 @@ digi2pdf --show-browser
 digi2pdf --output-dir ./exports
 ```
 
-Credentials are saved only after a successful login and only if you confirm the prompt. On macOS they go into Keychain; on Windows they go into Credential Manager through `keyring`.
+Credentials are saved only after a successful login and only if you confirm the prompt. Password entry is masked with `*`. On macOS credentials go into Keychain; on Windows they go into Credential Manager through `keyring`.
 
-OCR is optional because it still needs native Tesseract tooling. When OCR is enabled and a system dependency is missing, Digi2PDF offers install commands, rechecks the result, and asks for a restart if the new tools are not visible in the current terminal yet. The CLI estimates OCR ETA from the selected quality profile, page count, and local CPU job count. During page capture, Digi2PDF shows the active scan phase instead of a fake ETA because the final page count is only known after the reader stops advancing.
+OCR is optional at runtime because it still needs native Tesseract tooling. When OCR is enabled and a system dependency is missing, Digi2PDF offers install commands, rechecks the result, and asks for a restart if the new tools are not visible in the current terminal yet. If OCR fails after the PDF was written, you can retry OCR, keep the PDF without OCR, or mark the book as failed. The CLI estimates OCR ETA from the selected quality profile, page count, and local CPU job count. During page capture, Digi2PDF shows the active scan phase instead of a fake ETA because the final page count is only known after the reader stops advancing.
+
+By default, a batch exits with a failure status when any selected book failed. Use `--allow-partial` only when you intentionally want a successful exit as long as at least one book was exported.
 
 ## Legal Notice
 
@@ -164,7 +169,7 @@ uv run pytest
 Build a local one-file binary for your current platform:
 
 ```sh
-uv run pyinstaller --clean --noconfirm --onefile --name digi2pdf --collect-all keyring --collect-all PIL --collect-all platformdirs --collect-all questionary --collect-all rich --collect-all selenium packaging/digi2pdf_entry.py
+uv run pyinstaller --clean --noconfirm --onefile --name digi2pdf --collect-all keyring --collect-all ocrmypdf --collect-all PIL --collect-all pypdfium2 --collect-all platformdirs --collect-all questionary --collect-all rich --collect-all selenium packaging/digi2pdf_entry.py
 ```
 
 Windows `.exe` builds are produced by the `Build Binaries` GitHub Actions workflow when a GitHub release is published. The workflow runs tests, smoke-tests `digi2pdf.exe --version`, and uploads the versioned EXE plus a SHA256 checksum to the release assets.

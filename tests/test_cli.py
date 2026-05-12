@@ -54,6 +54,14 @@ def test_delay_argument_accepts_valid_float() -> None:
     assert args.delay == 0.25
 
 
+def test_allow_partial_flag_is_available() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["--allow-partial"])
+
+    assert args.allow_partial
+
+
 def test_frozen_binary_skips_python_package_installer(monkeypatch) -> None:
     monkeypatch.setattr("digi2pdf.preflight.sys.frozen", True, raising=False)
     monkeypatch.setattr(

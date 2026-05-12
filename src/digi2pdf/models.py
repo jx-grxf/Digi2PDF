@@ -51,6 +51,7 @@ class RuntimeOptions:
     output_dir: Path
     headless: bool
     all_books: bool
+    allow_partial: bool
     keep_images: bool
     ocr_enabled: bool
     ocr_by_book: dict[int, bool]

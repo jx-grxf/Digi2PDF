@@ -9,6 +9,7 @@ from digi2pdf.preflight import (
     install_missing_dependencies,
     missing_required_checks,
     run_bundled_runtime_checks,
+    run_preflight_checks,
     run_python_dependency_checks,
 )
 
@@ -87,6 +88,43 @@ def test_windows_winget_actions_pin_winget_source(monkeypatch) -> None:
     assert all("winget" in action.command for action in actions)
     assert all("--accept-package-agreements" in action.command for action in actions)
     assert all("--accept-source-agreements" in action.command for action in actions)
+
+
+def test_linux_chrome_install_action_uses_apt(monkeypatch) -> None:
+    monkeypatch.setattr("digi2pdf.preflight.platform.system", lambda: "Linux")
+    monkeypatch.setattr(
+        "digi2pdf.preflight.shutil.which",
+        lambda binary: "/usr/bin/apt-get" if binary == "apt-get" else None,
+    )
+
+    actions = install_actions_for([PreflightCheck("Chrome", False, "missing")])
+
+    assert InstallAction(
+        "Install Chromium with apt",
+        ("sudo", "apt-get", "install", "-y", "chromium-browser"),
+    ) in actions
+
+
+def test_ocr_preflight_checks_runtime_when_ocr_is_required(monkeypatch) -> None:
+    monkeypatch.setattr("digi2pdf.preflight.run_python_dependency_checks", lambda: [])
+    monkeypatch.setattr("digi2pdf.preflight._chrome_check", lambda: PreflightCheck("Chrome", True, "ok"))
+    monkeypatch.setattr(
+        "digi2pdf.preflight._ocr_runtime_check",
+        lambda: PreflightCheck("OCR runtime", True, "ready"),
+    )
+    monkeypatch.setattr(
+        "digi2pdf.preflight._binary_check",
+        lambda label, _binary: PreflightCheck(label, True, "ok"),
+    )
+
+    checks = run_preflight_checks(require_ocr=True)
+
+    assert [check.name for check in checks] == [
+        "Operating system",
+        "Chrome",
+        "OCR runtime",
+        "Tesseract",
+    ]
 
 
 def test_install_missing_dependencies_stops_after_failed_action(monkeypatch) -> None:
