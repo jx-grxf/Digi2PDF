@@ -110,7 +110,7 @@ digi2pdf
 Windows users can either use the same CLI install or download the latest `digi2pdf-*-windows-x64.exe` release asset:
 
 ```powershell
-.\digi2pdf-v0.2.3-windows-x64.exe
+.\digi2pdf-v0.3.0-windows-x64.exe
 ```
 
 The EXE bundles the required Python packages. Google Chrome still needs to be installed separately because Selenium controls the real browser. If OCR is enabled, Digi2PDF checks Tesseract and offers install/recheck/restart guidance.
