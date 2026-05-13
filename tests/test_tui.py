@@ -102,5 +102,5 @@ def test_ask_manual_worker_count_retries_invalid_value(monkeypatch) -> None:
     )
     monkeypatch.setattr(tui.questionary, "print", lambda message, **_kwargs: warnings.append(message))
 
-    assert tui.ask_manual_worker_count(2, 2) == 2
+    assert tui.ask_manual_worker_count(2, 2, default_workers=1) == 2
     assert warnings

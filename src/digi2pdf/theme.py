@@ -146,6 +146,12 @@ class Tui:
             self._book_status[title] = "running"
             self._refresh_dashboard()
 
+    def book_status(self, title: str, status: str) -> None:
+        with self._lock:
+            self._current_book = title
+            self._book_status[title] = status
+            self._refresh_dashboard()
+
     def finish_book(self, title: str, pdf_path: Path) -> None:
         with self._lock:
             self._book_status[title] = "done"
@@ -161,6 +167,7 @@ class Tui:
     def capture_progress(self, title: str, page: int) -> None:
         with self._lock:
             self._capture_pages[title] = page
+            self._book_status[title] = "capturing pages"
             self._emit("●", f"Captured page {page}", THEME.accent, title)
             self._refresh_dashboard()
 
@@ -293,7 +300,7 @@ class Tui:
                 _truncate(title, 24),
                 status,
                 str(pages) if pages else "-",
-                style=style if status in {"running", "ocr"} else None,
+                style=style if status in {"starting", "running", "capturing pages", "ocr"} else None,
             )
         if len(self._dashboard_titles) > 12:
             table.add_row("...", f"{len(self._dashboard_titles) - 12} more", "-")

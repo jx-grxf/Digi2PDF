@@ -255,14 +255,24 @@ def ask_worker_count(selected_books: int, recommendation: WorkerRecommendation) 
     if selected == WORKERS_SERIAL:
         return 1
 
-    return ask_manual_worker_count(selected_books, recommendation.max_workers)
+    return ask_manual_worker_count(
+        selected_books,
+        recommendation.max_workers,
+        default_workers=recommendation.recommended_workers,
+    )
 
 
-def ask_manual_worker_count(selected_books: int, max_workers: int) -> int:
+def ask_manual_worker_count(
+    selected_books: int,
+    max_workers: int,
+    *,
+    default_workers: int | None = None,
+) -> int:
+    default_workers = default_workers or 1
     while True:
         answer = questionary.text(
             "Parallel Chrome sessions",
-            default=str(max_workers),
+            default=str(default_workers),
             instruction=(
                 "Advanced, not recommended. "
                 f"Enter 1-{min(selected_books, max_workers)}; max selected books = {selected_books}."

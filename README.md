@@ -79,6 +79,8 @@ Use it only for books you are allowed to access and export under your account, s
 9. Choose which selected books should receive OCR.
 10. Digi2PDF detects the viewer type, captures stable page images, writes a PDF, optionally adds OCR, and removes intermediate page images unless `--keep-images` is set.
 
+Parallel mode opens isolated Chrome sessions per worker. For reliability, Digi2PDF only uses parallel workers when a Digi4School login is saved in the system keychain; otherwise it falls back to the safer one-book-at-a-time mode.
+
 ## Tech Stack
 
 | Area | Tooling |
@@ -111,12 +113,12 @@ digi2pdf
 Windows users can either use the same CLI install or download the latest `digi2pdf-*-windows-x64.exe` release asset:
 
 ```powershell
-.\digi2pdf-v0.3.0-windows-x64.exe
+.\digi2pdf-v0.3.1-windows-x64.exe
 ```
 
 The EXE bundles the required Python packages. Google Chrome still needs to be installed separately because Selenium controls the real browser. If OCR is enabled, Digi2PDF checks Tesseract and offers install/recheck/restart guidance.
 
-macOS users can download the latest `Digi2PDF-*-macos-*.zip` release asset, unzip it, and move `Digi2PDF.app` into `/Applications`. The app bundle still uses the same Python/PyInstaller runtime as the CLI and opens the interactive TUI in Terminal. Google Chrome still needs to be installed separately.
+macOS users can download the latest `Digi2PDF-*-macos-*.dmg` release asset, open it, and drag `Digi2PDF.app` into `/Applications`. The app bundle includes the Python runtime and required Python packages through PyInstaller, so normal users do not need Python, uv, or pip installed. It opens the interactive TUI in Terminal because Digi2PDF is a terminal app. Google Chrome still needs to be installed separately. If OCR is enabled, Digi2PDF checks Tesseract and offers install/recheck/restart guidance. The first public macOS build is not notarized yet, so macOS may require right-clicking the app and choosing Open once.
 
 If you prefer the Python CLI:
 
@@ -175,11 +177,11 @@ Build a local one-file binary for your current platform:
 
 ```sh
 uv run pyinstaller --clean --noconfirm --onefile --name digi2pdf --collect-all keyring --collect-all ocrmypdf --collect-all PIL --collect-all pypdfium2 --collect-all platformdirs --collect-all questionary --collect-all rich --collect-all selenium packaging/digi2pdf_entry.py
-./scripts/build_macos_app.sh v0.3.0
+./scripts/build_macos_app.sh v0.3.1
 ```
 
 Windows `.exe` builds are produced by the `Build Binaries` GitHub Actions workflow when a GitHub release is published. The workflow runs tests, smoke-tests `digi2pdf.exe --version`, and uploads the versioned EXE plus a SHA256 checksum to the release assets.
-macOS `.app` ZIP builds are produced by the same workflow on macOS runners, using `packaging/macos/AppIcon.icns` for the app icon.
+macOS `.dmg` builds are produced by the same workflow on macOS runners, using `packaging/macos/AppIcon.icns` for the app icon.
 
 ## Roadmap
 

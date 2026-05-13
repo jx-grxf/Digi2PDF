@@ -382,6 +382,8 @@ class Digi2PDFSession:
                 )
                 return
             except (OcrUnavailableError, RuntimeError) as error:
+                if not self.options.interactive_ocr_recovery:
+                    raise RuntimeError(f"OCR failed for {title}: {error}") from error
                 action = ask_ocr_failure_action(title, str(error))
                 if action == OCR_RETRY:
                     continue
@@ -397,6 +399,12 @@ class Digi2PDFSession:
             for choice in choices
         }
         worker_count = self._resolve_worker_count(len(choices))
+        if worker_count > 1 and not self._parallel_export_ready():
+            self.sink.warn(
+                "Parallel export needs a saved Digi4School login for reliable worker sessions. "
+                "Falling back to one book at a time for this run."
+            )
+            worker_count = 1
         self.sink.start_dashboard([choice.title for choice in choices], self.options, ocr_by_title)
         self.sink.step(
             "Processing one book at a time."
@@ -451,6 +459,7 @@ class Digi2PDFSession:
         for choice in choices:
             title = choice.title or f"book-{choice.index + 1}"
             self.current_book_index = choice.index
+            self._set_book_status(title, "starting")
             self._open_book(BookChoice(title=title, index=choice.index), book_elements[choice.index])
             try:
                 self._save_current_book(title)
@@ -499,6 +508,7 @@ class Digi2PDFSession:
         from digi2pdf.preflight import resolve_chrome_binary
 
         title = choice.title or f"book-{choice.index + 1}"
+        self._set_book_status(title, "starting")
         with tempfile.TemporaryDirectory(prefix="digi2pdf-chrome-") as profile_dir:
             browser = create_chrome_driver(
                 headless=self.options.headless,
@@ -507,7 +517,7 @@ class Digi2PDFSession:
             )
             worker = Digi2PDFSession(
                 browser,
-                replace(self.options, worker_setting="1"),
+                replace(self.options, worker_setting="1", interactive_ocr_recovery=False),
                 self.sink,
             )
             worker._used_book_dirs = self._used_book_dirs
@@ -615,12 +625,20 @@ class Digi2PDFSession:
         self.sink.step(recommendation.summary)
         return workers
 
+    def _parallel_export_ready(self) -> bool:
+        return not self.options.forget_login and load_credentials() is not None
+
     def _mark_book_failed(self, title: str, detail: str) -> None:
         fail_book = getattr(self.sink, "fail_book", None)
         if callable(fail_book):
             fail_book(title, detail)
         else:
             self.sink.warn(f"Skipped {title}: {detail}")
+
+    def _set_book_status(self, title: str, status: str) -> None:
+        book_status = getattr(self.sink, "book_status", None)
+        if callable(book_status):
+            book_status(title, status)
 
     def _ocr_enabled_for_title(self, title: str) -> bool:
         if not self.options.ocr_enabled:
