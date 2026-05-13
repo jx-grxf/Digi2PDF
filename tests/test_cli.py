@@ -62,6 +62,14 @@ def test_allow_partial_flag_is_available() -> None:
     assert args.allow_partial
 
 
+def test_workers_argument_is_available() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["--workers", "auto"])
+
+    assert args.workers == "auto"
+
+
 def test_frozen_binary_skips_python_package_installer(monkeypatch) -> None:
     monkeypatch.setattr("digi2pdf.preflight.sys.frozen", True, raising=False)
     monkeypatch.setattr(

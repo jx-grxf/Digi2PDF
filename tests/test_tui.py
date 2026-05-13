@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from digi2pdf import tui
+from digi2pdf.concurrency import WorkerRecommendation
 
 
 def test_ask_password_uses_masked_questionary_prompt(monkeypatch) -> None:
@@ -71,3 +72,35 @@ def test_ask_books_can_cancel_after_empty_manual_selection(monkeypatch) -> None:
     )
 
     assert tui.ask_books(["Math"]) is None
+
+
+def test_ask_worker_count_defaults_to_auto_recommendation(monkeypatch) -> None:
+    recommendation = WorkerRecommendation(
+        selected_books=4,
+        cpu_count=8,
+        available_memory_gib=16.0,
+        max_workers=4,
+        recommended_workers=3,
+    )
+
+    monkeypatch.setattr(
+        tui.questionary,
+        "select",
+        lambda *_args, **_kwargs: SimpleNamespace(ask=lambda: tui.WORKERS_AUTO),
+    )
+
+    assert tui.ask_worker_count(4, recommendation) == 3
+
+
+def test_ask_manual_worker_count_retries_invalid_value(monkeypatch) -> None:
+    answers = iter(["5", "2"])
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        tui.questionary,
+        "text",
+        lambda *_args, **_kwargs: SimpleNamespace(ask=lambda: next(answers)),
+    )
+    monkeypatch.setattr(tui.questionary, "print", lambda message, **_kwargs: warnings.append(message))
+
+    assert tui.ask_manual_worker_count(2, 2, default_workers=1) == 2
+    assert warnings

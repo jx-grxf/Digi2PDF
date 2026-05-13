@@ -9,6 +9,78 @@ permissions:
   contents: write
 
 jobs:
+  macos-app:
+    name: macOS App
+    runs-on: macos-latest
+    env:
+      PYTHON_VERSION: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --dev --frozen
+      - run: uv run ruff check .
+      - run: uv run pytest
+      - name: Install DMG tooling
+        run: brew install create-dmg
+      - name: Build Digi2PDF.app
+        id: build
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="manual-${{ github.run_number }}"
+          fi
+          ASSET_PATH="$(./scripts/build_macos_app.sh "$VERSION" | tail -n 1)"
+          echo "asset_path=$ASSET_PATH" >> "$GITHUB_OUTPUT"
+          echo "checksum_path=$ASSET_PATH.sha256" >> "$GITHUB_OUTPUT"
+          echo "asset_name=$(basename "$ASSET_PATH")" >> "$GITHUB_OUTPUT"
+          echo "checksum_name=$(basename "$ASSET_PATH").sha256" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digi2pdf-macos-app
+          path: release-assets/*
+          if-no-files-found: error
+      - name: Upload macOS app to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "${{ github.event.release.tag_name }}"
+          "${{ steps.build.outputs.asset_path }}"
+          "${{ steps.build.outputs.checksum_path }}"
+          --clobber
+      - name: Wait for macOS release assets
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          expected=(
+            "${{ steps.build.outputs.asset_name }}"
+            "${{ steps.build.outputs.checksum_name }}"
+          )
+
+          for attempt in {1..12}; do
+            asset_names="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+            missing=()
+            for name in "${expected[@]}"; do
+              if ! grep -Fxq "$name" <<<"$asset_names"; then
+                missing+=("$name")
+              fi
+            done
+
+            if [ "${#missing[@]}" -eq 0 ]; then
+              echo "Release assets are visible: ${expected[*]}"
+              exit 0
+            fi
+
+            echo "Waiting for release assets: ${missing[*]}"
+            sleep 5
+          done
+
+          echo "Release assets did not become visible in time." >&2
+          exit 1
+
   windows-exe:
     name: Windows EXE
     runs-on: windows-latest
@@ -99,15 +171,20 @@ jobs:
 
           Write-Error "Release assets did not become visible in time."
           exit 1
-      - name: Trigger website rebuild
-        if: github.event_name == 'release'
+
+  trigger-website-rebuild:
+    name: Trigger website rebuild
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    needs: [macos-app, windows-exe]
+    steps:
+      - name: Trigger website rebuild after all binaries
         env:
           WEBSITE_DEPLOY_HOOK_URL: ${{ secrets.WEBSITE_DEPLOY_HOOK_URL }}
-        shell: pwsh
         run: |
-          if (-not $env:WEBSITE_DEPLOY_HOOK_URL) {
-            Write-Host "WEBSITE_DEPLOY_HOOK_URL secret is missing; skipping website rebuild."
+          if [ -z "$WEBSITE_DEPLOY_HOOK_URL" ]; then
+            echo "WEBSITE_DEPLOY_HOOK_URL secret is missing; skipping website rebuild."
             exit 0
-          }
+          fi
 
-          Invoke-WebRequest -Method Post -Uri $env:WEBSITE_DEPLOY_HOOK_URL | Out-Null
+          curl -fsS -X POST "$WEBSITE_DEPLOY_HOOK_URL" >/dev/null

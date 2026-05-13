@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.1
+
+Released 2026-05-13.
+
+### Highlights
+
+- Multi-book exports can now run one book at a time, in recommended automatic parallel mode, or with an advanced manual session count.
+- macOS releases now ship as a drag-to-Applications `Digi2PDF.app` DMG built by GitHub Actions.
+
+### Fixed
+
+- Parallel workers no longer open interactive OCR recovery prompts from background threads.
+- Parallel exports fall back to serial mode when no saved Digi4School login is available.
+- The macOS launcher now supports direct CLI smoke tests such as `Digi2PDF --version`.
+
+### Improved
+
+- The dashboard shows per-book starting and capturing states while multiple books are active.
+- Manual session count defaults to the recommended worker count instead of the maximum.
+- Release workflows now wait for both macOS and Windows assets before triggering the website rebuild.
+
 ## 0.3.0
 
 Released 2026-05-12.

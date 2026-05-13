@@ -5,6 +5,7 @@ from pathlib import Path
 import questionary
 from questionary import Choice
 
+from digi2pdf.concurrency import WorkerRecommendation, parse_manual_worker_count
 from digi2pdf.credentials import StoredCredentials
 from digi2pdf.models import BookChoice, OcrProfile
 from digi2pdf.theme import THEME
@@ -26,6 +27,10 @@ RUNTIME_CANCEL = "cancel"
 OCR_RETRY = "retry"
 OCR_KEEP_PDF = "keep_pdf"
 OCR_FAIL = "fail"
+
+WORKERS_SERIAL = "serial"
+WORKERS_AUTO = "auto"
+WORKERS_MANUAL = "manual"
 
 
 def ask_delay(default: float = 0.5) -> float:
@@ -216,6 +221,70 @@ def ask_ocr_by_book(selected: list[BookChoice], *, default: bool) -> dict[int, b
     ).ask()
     enabled_set = set(enabled or [])
     return {choice.index: choice.index in enabled_set for choice in selected}
+
+
+def ask_worker_count(selected_books: int, recommendation: WorkerRecommendation) -> int:
+    if selected_books <= 1:
+        return 1
+
+    selected = questionary.select(
+        "How should Digi2PDF process the selected books?",
+        choices=[
+            Choice(
+                title="Multiple books at a time (auto, recommended)",
+                value=WORKERS_AUTO,
+            ),
+            Choice(
+                title="One book at a time (slower, safest)",
+                value=WORKERS_SERIAL,
+            ),
+            Choice(
+                title="Manual session count (advanced, not recommended)",
+                value=WORKERS_MANUAL,
+            ),
+        ],
+        default=WORKERS_AUTO,
+        use_indicator=True,
+        use_shortcuts=False,
+        instruction=recommendation.summary,
+        style=_style(),
+    ).ask()
+
+    if selected in (None, WORKERS_AUTO):
+        return recommendation.recommended_workers
+    if selected == WORKERS_SERIAL:
+        return 1
+
+    return ask_manual_worker_count(
+        selected_books,
+        recommendation.max_workers,
+        default_workers=recommendation.recommended_workers,
+    )
+
+
+def ask_manual_worker_count(
+    selected_books: int,
+    max_workers: int,
+    *,
+    default_workers: int | None = None,
+) -> int:
+    default_workers = default_workers or 1
+    while True:
+        answer = questionary.text(
+            "Parallel Chrome sessions",
+            default=str(default_workers),
+            instruction=(
+                "Advanced, not recommended. "
+                f"Enter 1-{min(selected_books, max_workers)}; max selected books = {selected_books}."
+            ),
+            style=_style(),
+        ).ask()
+        if answer is None:
+            return 1
+        try:
+            return parse_manual_worker_count(answer.strip(), selected_books=selected_books)
+        except ValueError as error:
+            questionary.print(str(error), style=f"fg:{THEME.warning}")
 
 
 def _select_action(message: str, choices: list[Choice], *, default: str) -> str:

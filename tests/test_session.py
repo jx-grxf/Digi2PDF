@@ -10,13 +10,25 @@ from digi2pdf.session import Digi2PDFSession
 
 
 class NullSink:
+    def __init__(self) -> None:
+        self.warnings: list[str] = []
+
     def start_dashboard(self, *_args: object) -> None:
         return
 
     def finish_dashboard(self) -> None:
         return
 
+    def step(self, _message: str) -> None:
+        return
+
+    def book_status(self, _title: str, _status: str) -> None:
+        return
+
     def warn(self, _message: str) -> None:
+        self.warnings.append(_message)
+
+    def fail_book(self, _title: str, _detail: str) -> None:
         return
 
 
@@ -32,6 +44,8 @@ def _options(tmp_path: Path) -> RuntimeOptions:
         ocr_by_book={},
         ocr_profile=OcrProfile("balanced", "Balanced", 2, 1.4),
         forget_login=False,
+        worker_setting="1",
+        interactive_ocr_recovery=True,
     )
 
 
@@ -182,3 +196,46 @@ def test_save_books_allows_partial_when_enabled(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setattr("digi2pdf.session.ask_retry_failed_books", lambda _titles: False)
 
     assert session._save_books([BookChoice("First", 0), BookChoice("Second", 1)], [object(), object()])
+
+
+def test_parallel_save_falls_back_without_saved_login(monkeypatch, tmp_path: Path) -> None:
+    session = Digi2PDFSession.__new__(Digi2PDFSession)
+    session.options = _options(tmp_path)
+    session.sink = NullSink()
+    session.browser = SimpleNamespace(window_handles=[0])
+    session.current_book_index = None
+    calls: list[str] = []
+    monkeypatch.setattr(session, "_resolve_worker_count", lambda _count: 2)
+    monkeypatch.setattr("digi2pdf.session.load_credentials", lambda: None)
+    monkeypatch.setattr(
+        session,
+        "_save_books_serial",
+        lambda *_args: calls.append("serial") or 2,
+    )
+    monkeypatch.setattr(
+        session,
+        "_save_books_parallel",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("parallel should not run")),
+    )
+
+    assert session._save_books([BookChoice("First", 0), BookChoice("Second", 1)], [object(), object()])
+    assert calls == ["serial"]
+    assert any("Falling back to one book at a time" in warning for warning in session.sink.warnings)
+
+
+def test_noninteractive_worker_ocr_failure_does_not_prompt(monkeypatch, tmp_path: Path) -> None:
+    session = Digi2PDFSession.__new__(Digi2PDFSession)
+    options = _options(tmp_path)
+    session.options = RuntimeOptions(**{**options.__dict__, "ocr_enabled": True, "interactive_ocr_recovery": False})
+    session.sink = NullSink()
+    monkeypatch.setattr(
+        "digi2pdf.session.apply_ocr",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("tesseract missing")),
+    )
+    monkeypatch.setattr(
+        "digi2pdf.session.ask_ocr_failure_action",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("prompt should not run")),
+    )
+
+    with pytest.raises(RuntimeError, match="OCR failed for Book"):
+        session._apply_ocr_with_recovery("Book", tmp_path / "book.pdf", page_count=1)
